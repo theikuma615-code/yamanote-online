@@ -294,7 +294,7 @@ export default function GameApp() {
               <div className="time-pick">
                 <span>1回答の制限時間</span>
                 <div>
-                  {[5, 10, 15].map((value) => (
+                  {[10, 15, 20].map((value) => (
                     <button
                       key={value}
                       className={timeLimit === value ? "selected" : ""}

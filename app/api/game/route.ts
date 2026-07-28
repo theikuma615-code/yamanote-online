@@ -134,6 +134,11 @@ function cleanCode(value: unknown) {
   return String(value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
 }
 
+function cleanTimeLimit(value: unknown) {
+  const candidate = Number(value);
+  return [10, 15, 20].includes(candidate) ? candidate : 10;
+}
+
 async function getRoom(code: string) {
   return (await db()
     .prepare("SELECT * FROM rooms WHERE code = ?")
@@ -402,7 +407,7 @@ export async function POST(request: NextRequest) {
       const difficulty = ["S", "A", "B", "C"].includes(requestedDifficulty)
         ? requestedDifficulty
         : "C";
-      const timeLimit = Math.min(30, Math.max(5, Number(body.timeLimit) || 10));
+      const timeLimit = cleanTimeLimit(body.timeLimit);
 
       await db()
         .prepare(
@@ -449,7 +454,7 @@ export async function POST(request: NextRequest) {
     if (action === "create") {
       const name = cleanName(body.name);
       if (!name) throw new Error("名前を入力してください");
-      const timeLimit = Math.min(30, Math.max(5, Number(body.timeLimit) || 10));
+      const timeLimit = cleanTimeLimit(body.timeLimit);
       const requestedDifficulty = String(body.difficulty ?? "C").toUpperCase();
       const difficulty = ["S", "A", "B", "C"].includes(requestedDifficulty)
         ? requestedDifficulty
