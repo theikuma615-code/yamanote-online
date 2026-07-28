@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
+import { normalizeAnswer } from "./answer-normalization";
 import { topicByName, topicsForDifficulty } from "./topics";
 
 type Room = {
@@ -92,30 +93,7 @@ async function ensureSchema() {
 }
 
 function normalize(value: string, topic?: string | null) {
-  let result = value
-    .trim()
-    .toLocaleLowerCase("ja")
-    .replace(/[ 　・･。、,.\-ー]/g, "");
-  if (topic === "山手線の駅") result = result.replace(/駅$/, "");
-  if (topic === "都道府県") result = result.replace(/[都道府県]$/, "");
-  if (topic === "東京23区") result = result.replace(/区$/, "");
-  if (topic === "政令指定都市") result = result.replace(/市$/, "");
-  if (topic === "アメリカの州") result = result.replace(/州$/, "");
-  if (topic === "県庁所在地") result = result.replace(/[市区]$/, "");
-  if (topic === "国" || topic === "EU加盟国" || topic === "赤道が通る国") {
-    const aliases: Record<string, string> = {
-      アメリカ合衆国: "アメリカ",
-      米国: "アメリカ",
-      英国: "イギリス",
-      大韓民国: "韓国",
-      中華人民共和国: "中国",
-      ロシア連邦: "ロシア",
-      バチカン市国: "バチカン",
-      チェコ共和国: "チェコ",
-    };
-    result = aliases[result] ?? result;
-  }
-  return result;
+  return normalizeAnswer(value, topicByName(topic ?? null));
 }
 
 function accepted(topic: string, value: string) {
@@ -523,11 +501,17 @@ export async function POST(request: NextRequest) {
         throw new Error("その答えはお題に合っていないようです");
       }
       const normalized = normalize(value, freshRoom.topic);
-      const duplicate = await db()
-        .prepare("SELECT id FROM answers WHERE room_code = ? AND normalized = ?")
-        .bind(code, normalized)
-        .first();
-      if (duplicate) throw new Error("その答えはもう出ています");
+      const previousAnswers = await db()
+        .prepare("SELECT value FROM answers WHERE room_code = ?")
+        .bind(code)
+        .all<{ value: string }>();
+      if (
+        previousAnswers.results.some(
+          (answer) => normalize(answer.value, freshRoom.topic) === normalized,
+        )
+      ) {
+        throw new Error("その答えはもう出ています");
+      }
       const players = await getPlayers(code);
       const next = nextPlayer(players, playerId);
       if (!next) throw new Error("次のプレイヤーが見つかりません");

@@ -4,6 +4,7 @@ export type Topic = {
   name: string;
   difficulty: Difficulty;
   answers?: string[];
+  aliases?: Record<string, string>;
   completable?: boolean;
   note?: string;
 };
@@ -166,11 +167,53 @@ export const TOPICS: Topic[] = [
   { name: "草冠の漢字", difficulty: "B", note: "自由回答・漢字1文字" },
   { name: "都道府県", difficulty: "C", answers: prefectures, completable: true },
   { name: "国", difficulty: "C", answers: countries, note: "国・地域名で回答" },
-  { name: "動物", difficulty: "C", note: "自由回答" },
-  { name: "果物", difficulty: "C", note: "自由回答" },
-  { name: "楽器", difficulty: "C", note: "自由回答" },
+  {
+    name: "動物",
+    difficulty: "C",
+    aliases: {
+      犬: "いぬ", 猫: "ねこ", 牛: "うし", 馬: "うま", 豚: "ぶた",
+      羊: "ひつじ", 猿: "さる", 鼠: "ねずみ", 兎: "うさぎ", 狐: "きつね",
+      狸: "たぬき", 熊: "くま", 鹿: "しか", 象: "ぞう", 麒麟: "きりん",
+      河馬: "かば", 犀: "さい", 鯨: "くじら", 海豚: "いるか", 鮫: "さめ",
+      亀: "かめ", 蛇: "へび", 蛙: "かえる", 蟹: "かに", 海老: "えび",
+      蛸: "たこ", 烏賊: "いか",
+    },
+    note: "自由回答",
+  },
+  {
+    name: "果物",
+    difficulty: "C",
+    aliases: {
+      林檎: "りんご", 蜜柑: "みかん", 葡萄: "ぶどう", 苺: "いちご",
+      西瓜: "すいか", 檸檬: "れもん", 柚子: "ゆず", 無花果: "いちじく",
+      石榴: "ざくろ", 枇杷: "びわ",
+    },
+    note: "自由回答",
+  },
+  {
+    name: "楽器",
+    difficulty: "C",
+    aliases: {
+      三味線: "しゃみせん", 尺八: "しゃくはち", 太鼓: "たいこ",
+      琴: "こと", 箏: "こと",
+    },
+    note: "自由回答",
+  },
   { name: "スポーツ", difficulty: "C", note: "自由回答" },
-  { name: "お寿司のネタ", difficulty: "C", note: "自由回答" },
+  {
+    name: "お寿司のネタ",
+    difficulty: "C",
+    aliases: {
+      大トロ: "おおとろ", 中トロ: "ちゅうとろ", 鮪: "まぐろ",
+      鯛: "たい", 烏賊: "いか", 蛸: "たこ", 海老: "えび",
+      甘海老: "あまえび", 雲丹: "うに", 牡蠣: "かき", 鰯: "いわし",
+      鯵: "あじ", 鯖: "さば", 鰹: "かつお", 鰤: "ぶり",
+      穴子: "あなご", 鰻: "うなぎ", 数の子: "かずのこ",
+      赤貝: "あかがい", 帆立: "ほたて", 河豚: "ふぐ",
+      平目: "ひらめ", 縁側: "えんがわ",
+    },
+    note: "自由回答・漢字とかなは同じネタとして判定",
+  },
 ];
 
 export function topicByName(name: string | null) {
