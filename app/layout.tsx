@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "YAMANOTE RUSH｜山手線ゲームオンライン",
+  title: "山手線ゲームオンライン",
   description:
     "お題に答えて、時間切れで脱落。最後の1人まで続くオンライン山手線ゲーム。",
 };

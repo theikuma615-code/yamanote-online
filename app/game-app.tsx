@@ -153,10 +153,10 @@ export default function GameApp() {
     <main className="app-shell">
       <header className="topbar">
         <button className="brand" onClick={reset} aria-label="ホームへ戻る">
-          <span className="brand-mark">Y</span>
+          <span className="brand-mark">山</span>
           <span>
-            <b>YAMANOTE</b>
-            <em>RUSH</em>
+            <b>山手線ゲーム</b>
+            <em>オンライン</em>
           </span>
         </button>
         <div className="live-pill"><i /> ONLINE PARTY GAME</div>
@@ -228,7 +228,7 @@ export default function GameApp() {
             </div>
             <div className="ticket-cut left" /><div className="ticket-cut right" />
           </div>
-          <div className="decor rail-a">YAMANOTE GAME • YAMANOTE GAME •</div>
+          <div className="decor rail-a">山手線ゲームオンライン • 山手線ゲームオンライン •</div>
           <div className="decor rail-b">NO PAUSE / NO REPEAT / ONE WINNER</div>
         </section>
       )}
@@ -414,7 +414,7 @@ export default function GameApp() {
       )}
 
       <footer>
-        <span>YAMANOTE RUSH™</span>
+        <span>山手線ゲームオンライン™</span>
         <span>言って、つないで、生き残れ。</span>
         <span>MADE FOR FRIENDS</span>
       </footer>

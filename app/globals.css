@@ -70,9 +70,9 @@ button:disabled { cursor: not-allowed; opacity: 0.45; transform: none !important
   font-style: italic;
 }
 
-.brand b, .brand em { display: block; line-height: 0.86; letter-spacing: -0.04em; }
-.brand b { font-size: 17px; }
-.brand em { color: var(--red); font-size: 13px; font-style: normal; font-weight: 950; letter-spacing: 0.12em; }
+.brand b, .brand em { display: block; line-height: 1; }
+.brand b { font-size: 14px; letter-spacing: -0.04em; }
+.brand em { color: var(--red); font-size: 10px; font-style: normal; font-weight: 950; letter-spacing: 0.18em; }
 
 .live-pill, .sudden-pill {
   border: 1px solid var(--ink);
