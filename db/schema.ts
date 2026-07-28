@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const rooms = sqliteTable("rooms", {
   code: text("code").primaryKey(),
@@ -43,6 +43,27 @@ export const answers = sqliteTable(
     uniqueIndex("answers_room_normalized_idx").on(
       table.roomCode,
       table.normalized,
+    ),
+  ],
+);
+
+export const matchmakingQueue = sqliteTable(
+  "matchmaking_queue",
+  {
+    playerId: text("player_id").primaryKey(),
+    name: text("name").notNull(),
+    difficulty: text("difficulty").notNull(),
+    timeLimit: integer("time_limit").notNull(),
+    status: text("status").notNull().default("waiting"),
+    roomCode: text("room_code"),
+    queuedAt: integer("queued_at").notNull(),
+  },
+  (table) => [
+    index("matchmaking_search_idx").on(
+      table.status,
+      table.difficulty,
+      table.timeLimit,
+      table.queuedAt,
     ),
   ],
 );

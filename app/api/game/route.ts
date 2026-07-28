@@ -25,6 +25,16 @@ type Player = {
   joined_at: number;
 };
 
+type MatchEntry = {
+  player_id: string;
+  name: string;
+  difficulty: "S" | "A" | "B" | "C";
+  time_limit: number;
+  status: "waiting" | "claiming" | "matched";
+  room_code: string | null;
+  queued_at: number;
+};
+
 function db() {
   if (!env.DB) throw new Error("Database is unavailable");
   return env.DB;
@@ -54,6 +64,14 @@ async function ensureSchema() {
     )`),
     database.prepare(
       "CREATE UNIQUE INDEX IF NOT EXISTS answers_room_normalized_idx ON answers(room_code, normalized)",
+    ),
+    database.prepare(`CREATE TABLE IF NOT EXISTS matchmaking_queue (
+      player_id TEXT PRIMARY KEY, name TEXT NOT NULL, difficulty TEXT NOT NULL,
+      time_limit INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'waiting',
+      room_code TEXT, queued_at INTEGER NOT NULL
+    )`),
+    database.prepare(
+      "CREATE INDEX IF NOT EXISTS matchmaking_search_idx ON matchmaking_queue(status, difficulty, time_limit, queued_at)",
     ),
   ]);
 
@@ -241,6 +259,119 @@ function roomCode() {
   ).join("");
 }
 
+async function getMatchEntry(playerId: string) {
+  return (await db()
+    .prepare("SELECT * FROM matchmaking_queue WHERE player_id = ?")
+    .bind(playerId)
+    .first<MatchEntry>()) ?? null;
+}
+
+async function waitingResponse(playerId: string) {
+  const entry = await getMatchEntry(playerId);
+  if (!entry || entry.status !== "waiting") {
+    throw new Error("マッチング待機が終了しました");
+  }
+  return {
+    matchmaking: {
+      status: "waiting",
+      difficulty: entry.difficulty,
+      timeLimit: entry.time_limit,
+      queuedAt: entry.queued_at,
+    },
+    playerId,
+  };
+}
+
+async function attemptRandomMatch(playerId: string) {
+  const self = await getMatchEntry(playerId);
+  if (!self) throw new Error("マッチング情報が見つかりません");
+  if (self.status === "matched" && self.room_code) {
+    return { ...(await state(self.room_code, playerId)), playerId };
+  }
+  if (self.status !== "waiting") return waitingResponse(playerId);
+
+  const pairResult = await db()
+    .prepare(
+      `SELECT * FROM matchmaking_queue
+       WHERE status = 'waiting' AND difficulty = ? AND time_limit = ?
+       ORDER BY queued_at, player_id LIMIT 2`,
+    )
+    .bind(self.difficulty, self.time_limit)
+    .all<MatchEntry>();
+  const pair = pairResult.results;
+  if (pair.length < 2 || pair[1].player_id !== playerId) {
+    return waitingResponse(playerId);
+  }
+
+  const opponent = pair[0];
+  const claims = await db().batch([
+    db()
+      .prepare(
+        "UPDATE matchmaking_queue SET status = 'claiming' WHERE player_id = ? AND status = 'waiting'",
+      )
+      .bind(opponent.player_id),
+    db()
+      .prepare(
+        "UPDATE matchmaking_queue SET status = 'claiming' WHERE player_id = ? AND status = 'waiting'",
+      )
+      .bind(self.player_id),
+  ]);
+  if (
+    Number(claims[0].meta.changes ?? 0) !== 1 ||
+    Number(claims[1].meta.changes ?? 0) !== 1
+  ) {
+    await db()
+      .prepare(
+        "UPDATE matchmaking_queue SET status = 'waiting' WHERE player_id IN (?, ?) AND status = 'claiming'",
+      )
+      .bind(opponent.player_id, self.player_id)
+      .run();
+    return waitingResponse(playerId);
+  }
+
+  let code = roomCode();
+  while (await getRoom(code)) code = roomCode();
+  const candidates = topicsForDifficulty(self.difficulty);
+  const topic = candidates[Math.floor(Math.random() * candidates.length)];
+  if (!topic) throw new Error("お題が見つかりません");
+  const now = Date.now();
+
+  await db().batch([
+    db()
+      .prepare(
+        `INSERT INTO rooms
+         (code, status, topic, time_limit, difficulty, current_turn, turn_started_at, round, created_at)
+         VALUES (?, 'active', ?, ?, ?, ?, ?, 1, ?)`,
+      )
+      .bind(
+        code,
+        topic.name,
+        self.time_limit,
+        self.difficulty,
+        opponent.player_id,
+        now,
+        now,
+      ),
+    db()
+      .prepare(
+        "INSERT INTO players (id, room_code, name, is_host, is_alive, score, joined_at) VALUES (?, ?, ?, 1, 1, 0, ?)",
+      )
+      .bind(opponent.player_id, code, opponent.name, opponent.queued_at),
+    db()
+      .prepare(
+        "INSERT INTO players (id, room_code, name, is_host, is_alive, score, joined_at) VALUES (?, ?, ?, 0, 1, 0, ?)",
+      )
+      .bind(self.player_id, code, self.name, self.queued_at),
+    db()
+      .prepare(
+        "UPDATE matchmaking_queue SET status = 'matched', room_code = ? WHERE player_id IN (?, ?)",
+      )
+      .bind(code, opponent.player_id, self.player_id),
+  ]);
+
+  return { ...(await state(code, playerId)), playerId };
+}
+
 export async function GET(request: NextRequest) {
   try {
     await ensureSchema();
@@ -263,6 +394,57 @@ export async function POST(request: NextRequest) {
     const action = String(body.action ?? "");
     const playerId = String(body.playerId ?? crypto.randomUUID());
     const now = Date.now();
+
+    if (action === "matchmake") {
+      const name = cleanName(body.name);
+      if (!name) throw new Error("名前を入力してください");
+      const requestedDifficulty = String(body.difficulty ?? "C").toUpperCase();
+      const difficulty = ["S", "A", "B", "C"].includes(requestedDifficulty)
+        ? requestedDifficulty
+        : "C";
+      const timeLimit = Math.min(30, Math.max(5, Number(body.timeLimit) || 10));
+
+      await db()
+        .prepare(
+          "DELETE FROM matchmaking_queue WHERE status = 'waiting' AND queued_at < ?",
+        )
+        .bind(now - 10 * 60 * 1000)
+        .run();
+      const existing = await getMatchEntry(playerId);
+      if (existing?.status === "matched" && existing.room_code) {
+        return NextResponse.json({
+          ...(await state(existing.room_code, playerId)),
+          playerId,
+        });
+      }
+      await db()
+        .prepare(
+          `INSERT INTO matchmaking_queue
+           (player_id, name, difficulty, time_limit, status, room_code, queued_at)
+           VALUES (?, ?, ?, ?, 'waiting', NULL, ?)
+           ON CONFLICT(player_id) DO UPDATE SET
+             name = excluded.name, difficulty = excluded.difficulty,
+             time_limit = excluded.time_limit, status = 'waiting',
+             room_code = NULL, queued_at = excluded.queued_at`,
+        )
+        .bind(playerId, name, difficulty, timeLimit, now)
+        .run();
+      return NextResponse.json(await attemptRandomMatch(playerId));
+    }
+
+    if (action === "match_status") {
+      return NextResponse.json(await attemptRandomMatch(playerId));
+    }
+
+    if (action === "cancel_match") {
+      await db()
+        .prepare(
+          "DELETE FROM matchmaking_queue WHERE player_id = ? AND status IN ('waiting', 'claiming')",
+        )
+        .bind(playerId)
+        .run();
+      return NextResponse.json({ matchmaking: { status: "cancelled" } });
+    }
 
     if (action === "create") {
       const name = cleanName(body.name);

@@ -15,6 +15,13 @@
       "when": 1785230123700,
       "tag": "0001_easy_stark_industries",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785231746920,
+      "tag": "0002_dry_freak",
+      "breakpoints": true
     }
   ]
 }

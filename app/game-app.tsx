@@ -32,6 +32,17 @@ type GameState = {
   serverNow: number;
 };
 
+type MatchResponse = Partial<GameState> & {
+  error?: string;
+  playerId?: string;
+  matchmaking?: {
+    status: "waiting" | "cancelled";
+    difficulty?: "S" | "A" | "B" | "C";
+    timeLimit?: number;
+    queuedAt?: number;
+  };
+};
+
 const avatars = ["🦊", "🐼", "🐸", "🐯", "🐨", "🐙", "🐧", "🦁"];
 const difficultyLabels = {
   S: "超難問",
@@ -41,7 +52,7 @@ const difficultyLabels = {
 } as const;
 
 export default function GameApp() {
-  const [screen, setScreen] = useState<"home" | "join" | "room">("home");
+  const [screen, setScreen] = useState<"home" | "join" | "match" | "room">("home");
   const [name, setName] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [timeLimit, setTimeLimit] = useState(10);
@@ -70,6 +81,35 @@ export default function GameApp() {
     setScreen("room");
     return data;
   }, []);
+
+  const matchRequest = useCallback(async (body: Record<string, unknown>) => {
+    const response = await fetch("/api/game", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json() as MatchResponse;
+    if (!response.ok) throw new Error(data.error || "マッチングに失敗しました");
+    if (data.playerId) setPlayerId(data.playerId);
+    if (data.room && data.players && data.answers && data.serverNow) {
+      offsetRef.current = Date.now() - data.serverNow;
+      setGame(data as GameState);
+      setScreen("room");
+    }
+    return data;
+  }, []);
+
+  useEffect(() => {
+    if (screen !== "match" || !playerId) return;
+    const poll = window.setInterval(async () => {
+      try {
+        await matchRequest({ action: "match_status", playerId });
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "マッチングに失敗しました");
+      }
+    }, 1000);
+    return () => window.clearInterval(poll);
+  }, [screen, playerId, matchRequest]);
 
   useEffect(() => {
     if (!game || !playerId) return;
@@ -161,10 +201,40 @@ export default function GameApp() {
     setScreen("home");
   };
 
+  const startRandomMatch = () => {
+    const id = crypto.randomUUID();
+    setPlayerId(id);
+    run(async () => {
+      const data = await matchRequest({
+        action: "matchmake",
+        name,
+        difficulty,
+        timeLimit,
+        playerId: id,
+      });
+      if (!data.room) setScreen("match");
+    });
+  };
+
+  const cancelMatch = async () => {
+    if (playerId) {
+      try {
+        await matchRequest({ action: "cancel_match", playerId });
+      } catch {
+        // Returning home is still safe if a cancellation request is interrupted.
+      }
+    }
+    reset();
+  };
+
   return (
     <main className="app-shell">
       <header className="topbar">
-        <button className="brand" onClick={reset} aria-label="ホームへ戻る">
+        <button
+          className="brand"
+          onClick={() => screen === "match" ? void cancelMatch() : reset()}
+          aria-label="ホームへ戻る"
+        >
           <span className="brand-mark">山</span>
           <span>
             <b>山手線ゲーム</b>
@@ -238,6 +308,13 @@ export default function GameApp() {
               <button
                 className="primary-action"
                 disabled={busy}
+                onClick={startRandomMatch}
+              >
+                <span>ランダムマッチ</span><b>⚡</b>
+              </button>
+              <button
+                className="friend-action"
+                disabled={busy}
                 onClick={() => run(() => call({
                   action: "create",
                   name,
@@ -246,7 +323,7 @@ export default function GameApp() {
                   playerId: crypto.randomUUID(),
                 }))}
               >
-                <span>ルームをつくる</span><b>↗</b>
+                <span>友達ルームをつくる</span><b>↗</b>
               </button>
               <div className="or-line"><span>または</span></div>
               <button className="join-action" onClick={() => setScreen("join")}>
@@ -258,6 +335,30 @@ export default function GameApp() {
           </div>
           <div className="decor rail-a">山手線ゲームオンライン • 山手線ゲームオンライン •</div>
           <div className="decor rail-b">NO PAUSE / NO REPEAT / CLEAR TOGETHER</div>
+        </section>
+      )}
+
+      {screen === "match" && (
+        <section className="match-screen">
+          <div className="match-panel">
+            <span className="step-label">RANDOM MATCH / 1 VS 1</span>
+            <div className="match-radar" aria-hidden="true">
+              <i /><i /><i />
+              <span>{avatars[0]}</span>
+              <span>{avatars[3]}</span>
+            </div>
+            <h2>対戦相手を<br /><strong>探しています…</strong></h2>
+            <div className="match-conditions">
+              <span><small>LEVEL</small><b>{difficulty}</b></span>
+              <span><small>TIME</small><b>{timeLimit}<em>秒</em></b></span>
+              <span><small>MODE</small><b>1 VS 1</b></span>
+            </div>
+            <p>同じ難易度・制限時間のプレイヤーと自動で対戦します。</p>
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <button className="cancel-match" onClick={() => void cancelMatch()}>
+              マッチングをキャンセル
+            </button>
+          </div>
         </section>
       )}
 
