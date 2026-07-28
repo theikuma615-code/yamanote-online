@@ -14,7 +14,7 @@ type Player = {
 type GameState = {
   room: {
     code: string;
-    status: "lobby" | "active" | "finished";
+    status: "lobby" | "starting" | "active" | "finished";
     topic: string | null;
     difficulty: "S" | "A" | "B" | "C";
     timeLimit: number;
@@ -63,8 +63,8 @@ export default function GameApp() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [now, setNow] = useState(Date.now());
-  const offsetRef = useRef(0);
+  const [now, setNow] = useState(0);
+  const [serverOffset, setServerOffset] = useState(0);
   const answerRef = useRef<HTMLInputElement>(null);
 
   const call = useCallback(async (body: Record<string, unknown>) => {
@@ -76,7 +76,7 @@ export default function GameApp() {
     const data = await response.json() as GameState & { error?: string; playerId?: string };
     if (!response.ok) throw new Error(data.error || "通信に失敗しました");
     if (data.playerId) setPlayerId(data.playerId);
-    offsetRef.current = Date.now() - data.serverNow;
+    setServerOffset(Date.now() - data.serverNow);
     setGame(data);
     setScreen("room");
     return data;
@@ -92,9 +92,9 @@ export default function GameApp() {
     if (!response.ok) throw new Error(data.error || "マッチングに失敗しました");
     if (data.playerId) setPlayerId(data.playerId);
     if (data.room && data.players && data.answers && data.serverNow) {
-      offsetRef.current = Date.now() - data.serverNow;
+      setServerOffset(Date.now() - data.serverNow);
       setGame(data as GameState);
-      setScreen("room");
+      setScreen(data.room.status === "starting" ? "match" : "room");
     }
     return data;
   }, []);
@@ -111,24 +111,26 @@ export default function GameApp() {
     return () => window.clearInterval(poll);
   }, [screen, playerId, matchRequest]);
 
+  const roomCode = game?.room.code;
+
   useEffect(() => {
-    if (!game || !playerId) return;
+    if (!roomCode || !playerId) return;
     const poll = window.setInterval(async () => {
       try {
         const response = await fetch(
-          `/api/game?code=${game.room.code}&playerId=${encodeURIComponent(playerId)}`,
+          `/api/game?code=${roomCode}&playerId=${encodeURIComponent(playerId)}`,
           { cache: "no-store" },
         );
         if (!response.ok) return;
         const data = await response.json() as GameState;
-        offsetRef.current = Date.now() - data.serverNow;
+        setServerOffset(Date.now() - data.serverNow);
         setGame(data);
       } catch {
         // The next poll will recover short connection drops.
       }
     }, 900);
     return () => window.clearInterval(poll);
-  }, [game?.room.code, playerId]);
+  }, [roomCode, playerId]);
 
   useEffect(() => {
     if (game?.room.status !== "active") return;
@@ -140,7 +142,10 @@ export default function GameApp() {
   const current = game?.players.find((player) => player.id === game.room.currentTurn);
   const isYourTurn = Boolean(you?.isAlive && current?.id === playerId);
   const remaining = game?.room.deadline
-    ? Math.max(0, game.room.deadline - (now - offsetRef.current))
+    ? Math.max(
+      0,
+      game.room.deadline - (now ? now - serverOffset : game.serverNow),
+    )
     : 0;
   const seconds = (remaining / 1000).toFixed(1);
   const timerPercent = game
@@ -347,13 +352,23 @@ export default function GameApp() {
               <span>{avatars[0]}</span>
               <span>{avatars[3]}</span>
             </div>
-            <h2>対戦相手を<br /><strong>探しています…</strong></h2>
+            <h2>
+              {game?.room.status === "starting" ? (
+                <>対戦相手が<br /><strong>見つかりました！</strong></>
+              ) : (
+                <>対戦相手を<br /><strong>探しています…</strong></>
+              )}
+            </h2>
             <div className="match-conditions">
               <span><small>LEVEL</small><b>{difficulty}</b></span>
               <span><small>TIME</small><b>{timeLimit}<em>秒</em></b></span>
               <span><small>MODE</small><b>1 VS 1</b></span>
             </div>
-            <p>同じ難易度・制限時間のプレイヤーと自動で対戦します。</p>
+            <p>
+              {game?.room.status === "starting"
+                ? "両プレイヤーの準備ができ次第、同時にスタートします。"
+                : "同じ難易度・制限時間のプレイヤーと自動で対戦します。"}
+            </p>
             {error && <p className="form-error" role="alert">{error}</p>}
             <button className="cancel-match" onClick={() => void cancelMatch()}>
               マッチングをキャンセル

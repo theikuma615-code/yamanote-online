@@ -5,7 +5,7 @@ import { topicByName, topicsForDifficulty } from "./topics";
 
 type Room = {
   code: string;
-  status: "lobby" | "active" | "finished";
+  status: "lobby" | "starting" | "active" | "finished";
   topic: string | null;
   time_limit: number;
   difficulty: "S" | "A" | "B" | "C";
@@ -31,7 +31,7 @@ type MatchEntry = {
   name: string;
   difficulty: "S" | "A" | "B" | "C";
   time_limit: number;
-  status: "waiting" | "claiming" | "matched";
+  status: "waiting" | "claiming" | "matched" | "ready";
   room_code: string | null;
   queued_at: number;
 };
@@ -265,11 +265,43 @@ async function waitingResponse(playerId: string) {
   };
 }
 
+async function acknowledgeRandomMatch(entry: MatchEntry, playerId: string) {
+  if (!entry.room_code) throw new Error("マッチング情報が見つかりません");
+  if (entry.status === "matched") {
+    await db()
+      .prepare(
+        "UPDATE matchmaking_queue SET status = 'ready' WHERE player_id = ? AND status = 'matched'",
+      )
+      .bind(playerId)
+      .run();
+  }
+
+  const ready = await db()
+    .prepare(
+      "SELECT COUNT(*) AS count FROM matchmaking_queue WHERE room_code = ? AND status = 'ready'",
+    )
+    .bind(entry.room_code)
+    .first<{ count: number }>();
+  if ((ready?.count ?? 0) >= 2) {
+    await db()
+      .prepare(
+        "UPDATE rooms SET status = 'active', turn_started_at = ? WHERE code = ? AND status = 'starting'",
+      )
+      .bind(Date.now(), entry.room_code)
+      .run();
+  }
+
+  return { ...(await state(entry.room_code, playerId)), playerId };
+}
+
 async function attemptRandomMatch(playerId: string) {
   const self = await getMatchEntry(playerId);
   if (!self) throw new Error("マッチング情報が見つかりません");
-  if (self.status === "matched" && self.room_code) {
-    return { ...(await state(self.room_code, playerId)), playerId };
+  if (
+    (self.status === "matched" || self.status === "ready") &&
+    self.room_code
+  ) {
+    return acknowledgeRandomMatch(self, playerId);
   }
   if (self.status !== "waiting") return waitingResponse(playerId);
 
@@ -323,8 +355,8 @@ async function attemptRandomMatch(playerId: string) {
     db()
       .prepare(
         `INSERT INTO rooms
-         (code, status, topic, time_limit, difficulty, current_turn, turn_started_at, round, created_at)
-         VALUES (?, 'active', ?, ?, ?, ?, ?, 1, ?)`,
+         (code, status, topic, time_limit, difficulty, current_turn, round, created_at)
+         VALUES (?, 'starting', ?, ?, ?, ?, 1, ?)`,
       )
       .bind(
         code,
@@ -332,7 +364,6 @@ async function attemptRandomMatch(playerId: string) {
         self.time_limit,
         self.difficulty,
         opponent.player_id,
-        now,
         now,
       ),
     db()
@@ -347,9 +378,14 @@ async function attemptRandomMatch(playerId: string) {
       .bind(self.player_id, code, self.name, self.queued_at),
     db()
       .prepare(
-        "UPDATE matchmaking_queue SET status = 'matched', room_code = ? WHERE player_id IN (?, ?)",
+        "UPDATE matchmaking_queue SET status = 'matched', room_code = ? WHERE player_id = ?",
       )
-      .bind(code, opponent.player_id, self.player_id),
+      .bind(code, opponent.player_id),
+    db()
+      .prepare(
+        "UPDATE matchmaking_queue SET status = 'ready', room_code = ? WHERE player_id = ?",
+      )
+      .bind(code, self.player_id),
   ]);
 
   return { ...(await state(code, playerId)), playerId };
@@ -394,11 +430,13 @@ export async function POST(request: NextRequest) {
         .bind(now - 10 * 60 * 1000)
         .run();
       const existing = await getMatchEntry(playerId);
-      if (existing?.status === "matched" && existing.room_code) {
-        return NextResponse.json({
-          ...(await state(existing.room_code, playerId)),
-          playerId,
-        });
+      if (
+        existing?.room_code &&
+        (existing.status === "matched" || existing.status === "ready")
+      ) {
+        return NextResponse.json(
+          await acknowledgeRandomMatch(existing, playerId),
+        );
       }
       await db()
         .prepare(
