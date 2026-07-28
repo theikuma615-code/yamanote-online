@@ -8,6 +8,13 @@
       "when": 1785227975210,
       "tag": "0000_short_khan",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1785230123700,
+      "tag": "0001_easy_stark_industries",
+      "breakpoints": true
     }
   ]
 }

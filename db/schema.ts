@@ -5,9 +5,11 @@ export const rooms = sqliteTable("rooms", {
   status: text("status").notNull().default("lobby"),
   topic: text("topic"),
   timeLimit: integer("time_limit").notNull().default(10),
+  difficulty: text("difficulty").notNull().default("C"),
   currentTurn: text("current_turn"),
   turnStartedAt: integer("turn_started_at"),
   winnerId: text("winner_id"),
+  finishReason: text("finish_reason"),
   round: integer("round").notNull().default(0),
   createdAt: integer("created_at").notNull(),
 });

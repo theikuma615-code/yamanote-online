@@ -16,10 +16,15 @@ type GameState = {
     code: string;
     status: "lobby" | "active" | "finished";
     topic: string | null;
+    difficulty: "S" | "A" | "B" | "C";
     timeLimit: number;
     currentTurn: string | null;
     deadline: number | null;
     winnerId: string | null;
+    finishReason: "completed" | "last_survivor" | null;
+    isCompletable: boolean;
+    totalAnswers: number | null;
+    answerCount: number;
     round: number;
   };
   players: Player[];
@@ -28,12 +33,19 @@ type GameState = {
 };
 
 const avatars = ["🦊", "🐼", "🐸", "🐯", "🐨", "🐙", "🐧", "🦁"];
+const difficultyLabels = {
+  S: "超難問",
+  A: "むずかしい",
+  B: "ふつう",
+  C: "やさしい",
+} as const;
 
 export default function GameApp() {
   const [screen, setScreen] = useState<"home" | "join" | "room">("home");
   const [name, setName] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [timeLimit, setTimeLimit] = useState(10);
+  const [difficulty, setDifficulty] = useState<"S" | "A" | "B" | "C">("C");
   const [playerId, setPlayerId] = useState("");
   const [game, setGame] = useState<GameState | null>(null);
   const [answer, setAnswer] = useState("");
@@ -194,6 +206,21 @@ export default function GameApp() {
                   autoComplete="nickname"
                 />
               </label>
+              <div className="difficulty-pick">
+                <span>お題の難易度</span>
+                <div>
+                  {(["S", "A", "B", "C"] as const).map((level) => (
+                    <button
+                      key={level}
+                      className={`level-${level.toLowerCase()} ${difficulty === level ? "selected" : ""}`}
+                      onClick={() => setDifficulty(level)}
+                      aria-pressed={difficulty === level}
+                    >
+                      <b>{level}</b><small>{difficultyLabels[level]}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="time-pick">
                 <span>1回答の制限時間</span>
                 <div>
@@ -215,6 +242,7 @@ export default function GameApp() {
                   action: "create",
                   name,
                   timeLimit,
+                  difficulty,
                   playerId: crypto.randomUUID(),
                 }))}
               >
@@ -229,7 +257,7 @@ export default function GameApp() {
             <div className="ticket-cut left" /><div className="ticket-cut right" />
           </div>
           <div className="decor rail-a">山手線ゲームオンライン • 山手線ゲームオンライン •</div>
-          <div className="decor rail-b">NO PAUSE / NO REPEAT / ONE WINNER</div>
+          <div className="decor rail-b">NO PAUSE / NO REPEAT / CLEAR TOGETHER</div>
         </section>
       )}
 
@@ -302,9 +330,9 @@ export default function GameApp() {
               </div>
             </div>
             <aside className="rule-card">
-              <span className="rule-number">RULE / 03</span>
+              <span className="rule-number">LEVEL {game.room.difficulty} / {difficultyLabels[game.room.difficulty]}</span>
               <h3>言えなければ、<br />そこで脱落。</h3>
-              <p>同じ答えは使えません。最後の1人になるまでゲームは続きます。</p>
+              <p>同じ答えは使えません。全回答を言い切れたお題では、その時点の生存者が全員勝利します。</p>
               <div className="limit-display"><small>TIME LIMIT</small><b>{game.room.timeLimit}</b><span>SEC</span></div>
               {you?.isHost ? (
                 <button
@@ -332,12 +360,17 @@ export default function GameApp() {
           <div className="game-meta">
             <button className="compact-code" onClick={copyCode}>ROOM {game.room.code} ⧉</button>
             <span>ROUND {String(game.room.round).padStart(2, "0")}</span>
+            <span className={`difficulty-chip level-${game.room.difficulty.toLowerCase()}`}>LEVEL {game.room.difficulty}</span>
             <span className="sudden-pill">⚡ SUDDEN DEATH</span>
           </div>
           <div className="topic-board">
             <span>今回のお題</span>
             <h2>{game.room.topic}</h2>
-            <p>同じ答えは使えません</p>
+            <p>
+              {game.room.isCompletable && game.room.totalAnswers
+                ? `全${game.room.totalAnswers}回答・残り${game.room.totalAnswers - game.room.answerCount}`
+                : "同じ答えは使えません"}
+            </p>
           </div>
           <div className="battle-layout">
             <div className="turn-panel">
@@ -396,19 +429,38 @@ export default function GameApp() {
       {screen === "room" && game?.room.status === "finished" && (
         <section className="result-screen">
           <div className="confetti c1">●</div><div className="confetti c2">◆</div>
-          <div className="result-kicker">WE HAVE A WINNER</div>
-          <div className="winner-avatar">👑<span>{avatars[Math.max(0, game.players.findIndex(p => p.id === game.room.winnerId)) % avatars.length]}</span></div>
-          <h2>{game.players.find(p => p.id === game.room.winnerId)?.name ?? "WINNER"}</h2>
-          <p>最後まで言い切った！<br /><strong>山手線ゲーム王</strong>の誕生です。</p>
-          <div className="podium">
-            {ranking.slice(0, 3).map((player, index) => (
-              <div key={player.id} className={`place place-${index + 1}`}>
-                <small>{index + 1}</small>
-                <span>{avatars[game.players.findIndex(p => p.id === player.id) % avatars.length]}</span>
-                <b>{player.name}</b><em>{player.score} PT</em>
+          {game.room.finishReason === "completed" ? (
+            <>
+              <div className="result-kicker">MISSION COMPLETE</div>
+              <div className="winner-avatar group-win">🎊</div>
+              <h2>全員クリア！</h2>
+              <p><strong>{game.room.topic}</strong>を全部言い切った！<br />最後まで残ったみんなの勝利です。</p>
+              <div className="winner-grid">
+                {game.players.filter(player => player.isAlive).map((player) => (
+                  <div key={player.id}>
+                    <span>{avatars[game.players.findIndex(p => p.id === player.id) % avatars.length]}</span>
+                    <b>{player.name}</b><em>{player.score} PT</em>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          ) : (
+            <>
+              <div className="result-kicker">WE HAVE A WINNER</div>
+              <div className="winner-avatar">👑<span>{avatars[Math.max(0, game.players.findIndex(p => p.id === game.room.winnerId)) % avatars.length]}</span></div>
+              <h2>{game.players.find(p => p.id === game.room.winnerId)?.name ?? "WINNER"}</h2>
+              <p>最後まで言い切った！<br /><strong>山手線ゲーム王</strong>の誕生です。</p>
+              <div className="podium">
+                {ranking.slice(0, 3).map((player, index) => (
+                  <div key={player.id} className={`place place-${index + 1}`}>
+                    <small>{index + 1}</small>
+                    <span>{avatars[game.players.findIndex(p => p.id === player.id) % avatars.length]}</span>
+                    <b>{player.name}</b><em>{player.score} PT</em>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
           <button className="primary-action result-button" onClick={reset}><span>もう一度あそぶ</span><b>↻</b></button>
         </section>
       )}

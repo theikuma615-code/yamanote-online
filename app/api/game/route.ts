@@ -1,14 +1,17 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
+import { topicByName, topicsForDifficulty } from "./topics";
 
 type Room = {
   code: string;
   status: "lobby" | "active" | "finished";
   topic: string | null;
   time_limit: number;
+  difficulty: "S" | "A" | "B" | "C";
   current_turn: string | null;
   turn_started_at: number | null;
   winner_id: string | null;
+  finish_reason: "completed" | "last_survivor" | null;
   round: number;
 };
 
@@ -22,40 +25,6 @@ type Player = {
   joined_at: number;
 };
 
-const TOPICS: Record<string, string[]> = {
-  "山手線の駅": [
-    "東京", "神田", "秋葉原", "御徒町", "上野", "鶯谷", "日暮里", "西日暮里",
-    "田端", "駒込", "巣鴨", "大塚", "池袋", "目白", "高田馬場", "新大久保",
-    "新宿", "代々木", "原宿", "渋谷", "恵比寿", "目黒", "五反田", "大崎",
-    "品川", "高輪ゲートウェイ", "田町", "浜松町", "新橋", "有楽町",
-  ],
-  "日本の都道府県": [
-    "北海道", "青森県", "岩手県", "宮城県", "秋田県", "山形県", "福島県",
-    "茨城県", "栃木県", "群馬県", "埼玉県", "千葉県", "東京都", "神奈川県",
-    "新潟県", "富山県", "石川県", "福井県", "山梨県", "長野県", "岐阜県",
-    "静岡県", "愛知県", "三重県", "滋賀県", "京都府", "大阪府", "兵庫県",
-    "奈良県", "和歌山県", "鳥取県", "島根県", "岡山県", "広島県", "山口県",
-    "徳島県", "香川県", "愛媛県", "高知県", "福岡県", "佐賀県", "長崎県",
-    "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県",
-  ],
-  "動物の名前": [
-    "犬", "猫", "うさぎ", "パンダ", "ライオン", "トラ", "ゾウ", "キリン",
-    "ゴリラ", "チンパンジー", "コアラ", "カンガルー", "シマウマ", "カバ",
-    "サイ", "ワニ", "ヘビ", "カメ", "ペンギン", "アザラシ", "イルカ",
-    "クジラ", "サメ", "ラッコ", "カワウソ", "リス", "ハムスター", "キツネ",
-    "たぬき", "オオカミ", "くま", "鹿", "猿", "馬", "牛", "豚", "羊",
-    "ヤギ", "ラクダ", "ナマケモノ", "アルパカ", "カピバラ", "ハリネズミ",
-    "モグラ", "コウモリ", "フクロウ", "鷹", "鶴", "孔雀",
-  ],
-  "くだもの": [
-    "りんご", "みかん", "バナナ", "ぶどう", "いちご", "メロン", "すいか",
-    "桃", "梨", "柿", "さくらんぼ", "レモン", "ライム", "オレンジ",
-    "グレープフルーツ", "キウイ", "マンゴー", "パイナップル", "パパイヤ",
-    "アボカド", "ブルーベリー", "ラズベリー", "ざくろ", "いちじく",
-    "びわ", "あんず", "梅", "栗", "ドラゴンフルーツ", "パッションフルーツ",
-  ],
-};
-
 function db() {
   if (!env.DB) throw new Error("Database is unavailable");
   return env.DB;
@@ -66,9 +35,9 @@ async function ensureSchema() {
   await database.batch([
     database.prepare(`CREATE TABLE IF NOT EXISTS rooms (
       code TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'lobby', topic TEXT,
-      time_limit INTEGER NOT NULL DEFAULT 10, current_turn TEXT,
-      turn_started_at INTEGER, winner_id TEXT, round INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL
+      time_limit INTEGER NOT NULL DEFAULT 10, difficulty TEXT NOT NULL DEFAULT 'C',
+      current_turn TEXT, turn_started_at INTEGER, winner_id TEXT,
+      finish_reason TEXT, round INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
     )`),
     database.prepare(`CREATE TABLE IF NOT EXISTS players (
       id TEXT PRIMARY KEY, room_code TEXT NOT NULL, name TEXT NOT NULL,
@@ -87,6 +56,21 @@ async function ensureSchema() {
       "CREATE UNIQUE INDEX IF NOT EXISTS answers_room_normalized_idx ON answers(room_code, normalized)",
     ),
   ]);
+
+  const columns = await database
+    .prepare("PRAGMA table_info(rooms)")
+    .all<{ name: string }>();
+  const names = new Set(columns.results.map((column) => column.name));
+  if (!names.has("difficulty")) {
+    await database.prepare(
+      "ALTER TABLE rooms ADD COLUMN difficulty TEXT NOT NULL DEFAULT 'C'",
+    ).run();
+  }
+  if (!names.has("finish_reason")) {
+    await database.prepare(
+      "ALTER TABLE rooms ADD COLUMN finish_reason TEXT",
+    ).run();
+  }
 }
 
 function normalize(value: string, topic?: string | null) {
@@ -95,12 +79,31 @@ function normalize(value: string, topic?: string | null) {
     .toLocaleLowerCase("ja")
     .replace(/[ 　・･。、,.\-ー]/g, "");
   if (topic === "山手線の駅") result = result.replace(/駅$/, "");
-  if (topic === "日本の都道府県") result = result.replace(/[都道府県]$/, "");
+  if (topic === "都道府県") result = result.replace(/[都道府県]$/, "");
+  if (topic === "東京23区") result = result.replace(/区$/, "");
+  if (topic === "政令指定都市") result = result.replace(/市$/, "");
+  if (topic === "アメリカの州") result = result.replace(/州$/, "");
+  if (topic === "県庁所在地") result = result.replace(/[市区]$/, "");
+  if (topic === "国" || topic === "EU加盟国" || topic === "赤道が通る国") {
+    const aliases: Record<string, string> = {
+      アメリカ合衆国: "アメリカ",
+      米国: "アメリカ",
+      英国: "イギリス",
+      大韓民国: "韓国",
+      中華人民共和国: "中国",
+      ロシア連邦: "ロシア",
+      バチカン市国: "バチカン",
+      チェコ共和国: "チェコ",
+    };
+    result = aliases[result] ?? result;
+  }
   return result;
 }
 
 function accepted(topic: string, value: string) {
-  return (TOPICS[topic] ?? []).some(
+  const config = topicByName(topic);
+  if (!config?.answers) return true;
+  return config.answers.some(
     (candidate) => normalize(candidate, topic) === normalize(value, topic),
   );
 }
@@ -155,7 +158,7 @@ async function eliminateTimedOutPlayer(room: Room) {
     await db().batch([
       db()
         .prepare(
-          "UPDATE rooms SET status = 'finished', winner_id = ?, current_turn = NULL WHERE code = ? AND current_turn = ? AND turn_started_at = ?",
+          "UPDATE rooms SET status = 'finished', winner_id = ?, finish_reason = 'last_survivor', current_turn = NULL WHERE code = ? AND current_turn = ? AND turn_started_at = ?",
         )
         .bind(remaining[0]?.id ?? null, room.code, room.current_turn, room.turn_started_at),
       db()
@@ -193,12 +196,18 @@ async function state(code: string, playerId?: string) {
     )
     .bind(code)
     .all<{ value: string; created_at: number; name: string }>();
+  const answerCount = await db()
+    .prepare("SELECT COUNT(*) AS count FROM answers WHERE room_code = ?")
+    .bind(code)
+    .first<{ count: number }>();
+  const topic = topicByName(room.topic);
 
   return {
     room: {
       code: room.code,
       status: room.status,
       topic: room.topic,
+      difficulty: room.difficulty,
       timeLimit: room.time_limit,
       currentTurn: room.current_turn,
       deadline:
@@ -206,6 +215,10 @@ async function state(code: string, playerId?: string) {
           ? room.turn_started_at + room.time_limit * 1000
           : null,
       winnerId: room.winner_id,
+      finishReason: room.finish_reason,
+      isCompletable: Boolean(topic?.completable),
+      totalAnswers: topic?.completable ? topic.answers?.length ?? null : null,
+      answerCount: answerCount?.count ?? 0,
       round: room.round,
     },
     players: players.map((player) => ({
@@ -255,14 +268,18 @@ export async function POST(request: NextRequest) {
       const name = cleanName(body.name);
       if (!name) throw new Error("名前を入力してください");
       const timeLimit = Math.min(30, Math.max(5, Number(body.timeLimit) || 10));
+      const requestedDifficulty = String(body.difficulty ?? "C").toUpperCase();
+      const difficulty = ["S", "A", "B", "C"].includes(requestedDifficulty)
+        ? requestedDifficulty
+        : "C";
       let code = roomCode();
       while (await getRoom(code)) code = roomCode();
       await db().batch([
         db()
           .prepare(
-            "INSERT INTO rooms (code, status, time_limit, round, created_at) VALUES (?, 'lobby', ?, 0, ?)",
+            "INSERT INTO rooms (code, status, time_limit, difficulty, round, created_at) VALUES (?, 'lobby', ?, ?, 0, ?)",
           )
-          .bind(code, timeLimit, now),
+          .bind(code, timeLimit, difficulty, now),
         db()
           .prepare(
             "INSERT INTO players (id, room_code, name, is_host, is_alive, score, joined_at) VALUES (?, ?, ?, 1, 1, 0, ?)",
@@ -296,13 +313,14 @@ export async function POST(request: NextRequest) {
       const requester = players.find((player) => player.id === playerId);
       if (!requester?.is_host) throw new Error("ホストだけが開始できます");
       if (players.length < 2) throw new Error("2人以上そろうと開始できます");
-      const topicNames = Object.keys(TOPICS);
-      const topic = topicNames[Math.floor(Math.random() * topicNames.length)];
+      const candidates = topicsForDifficulty(room.difficulty);
+      const topic = candidates[Math.floor(Math.random() * candidates.length)];
+      if (!topic) throw new Error("お題が見つかりません");
       await db()
         .prepare(
           "UPDATE rooms SET status = 'active', topic = ?, current_turn = ?, turn_started_at = ?, round = 1 WHERE code = ? AND status = 'lobby'",
         )
-        .bind(topic, players[0].id, now, code)
+        .bind(topic.name, players[0].id, now, code)
         .run();
       return NextResponse.json(await state(code, playerId));
     }
@@ -326,19 +344,36 @@ export async function POST(request: NextRequest) {
       const players = await getPlayers(code);
       const next = nextPlayer(players, playerId);
       if (!next) throw new Error("次のプレイヤーが見つかりません");
-      await db().batch([
+      const topic = topicByName(freshRoom.topic);
+      const count = await db()
+        .prepare("SELECT COUNT(*) AS count FROM answers WHERE room_code = ?")
+        .bind(code)
+        .first<{ count: number }>();
+      const completesTopic = Boolean(
+        topic?.completable &&
+        topic.answers &&
+        (count?.count ?? 0) + 1 >= topic.answers.length,
+      );
+      const operations = [
         db()
           .prepare(
             "INSERT INTO answers (id, room_code, player_id, value, normalized, round, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
           )
           .bind(crypto.randomUUID(), code, playerId, value, normalized, freshRoom.round, now),
         db().prepare("UPDATE players SET score = score + 1 WHERE id = ?").bind(playerId),
-        db()
+        completesTopic
+          ? db()
+            .prepare(
+              "UPDATE rooms SET status = 'finished', finish_reason = 'completed', winner_id = NULL, current_turn = NULL WHERE code = ? AND current_turn = ?",
+            )
+            .bind(code, playerId)
+          : db()
           .prepare(
             "UPDATE rooms SET current_turn = ?, turn_started_at = ?, round = round + 1 WHERE code = ? AND current_turn = ?",
           )
           .bind(next.id, now, code, playerId),
-      ]);
+      ];
+      await db().batch(operations);
       return NextResponse.json(await state(code, playerId));
     }
 
