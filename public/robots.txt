@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://yamanote-online.the-ikuma615.workers.dev/sitemap.xml

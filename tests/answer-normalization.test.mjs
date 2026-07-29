@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeAnswer } from "../app/api/game/answer-normalization";
-import { topicByName } from "../app/api/game/topics";
+import { normalizeAnswer } from "../app/api/game/answer-normalization.ts";
+import { topicByName } from "../app/api/game/topics.ts";
 
 test("treats sushi kanji, hiragana, and katakana as the same answer", () => {
   const topic = topicByName("お寿司のネタ");

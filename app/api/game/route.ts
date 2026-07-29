@@ -24,6 +24,8 @@ type Player = {
   is_alive: number;
   score: number;
   joined_at: number;
+  eliminated_at: number | null;
+  last_seen_at: number | null;
 };
 
 type MatchEntry = {
@@ -53,7 +55,8 @@ async function ensureSchema() {
     database.prepare(`CREATE TABLE IF NOT EXISTS players (
       id TEXT PRIMARY KEY, room_code TEXT NOT NULL, name TEXT NOT NULL,
       is_host INTEGER NOT NULL DEFAULT 0, is_alive INTEGER NOT NULL DEFAULT 1,
-      score INTEGER NOT NULL DEFAULT 0, joined_at INTEGER NOT NULL
+      score INTEGER NOT NULL DEFAULT 0, joined_at INTEGER NOT NULL,
+      eliminated_at INTEGER, last_seen_at INTEGER
     )`),
     database.prepare(
       "CREATE UNIQUE INDEX IF NOT EXISTS players_room_name_idx ON players(room_code, name)",
@@ -66,6 +69,9 @@ async function ensureSchema() {
     database.prepare(
       "CREATE UNIQUE INDEX IF NOT EXISTS answers_room_normalized_idx ON answers(room_code, normalized)",
     ),
+    database.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS answers_room_round_idx ON answers(room_code, round)",
+    ),
     database.prepare(`CREATE TABLE IF NOT EXISTS matchmaking_queue (
       player_id TEXT PRIMARY KEY, name TEXT NOT NULL, difficulty TEXT NOT NULL,
       time_limit INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'waiting',
@@ -74,6 +80,10 @@ async function ensureSchema() {
     database.prepare(
       "CREATE INDEX IF NOT EXISTS matchmaking_search_idx ON matchmaking_queue(status, difficulty, time_limit, queued_at)",
     ),
+    database.prepare(`CREATE TABLE IF NOT EXISTS request_limits (
+      key TEXT PRIMARY KEY, window_started_at INTEGER NOT NULL,
+      count INTEGER NOT NULL DEFAULT 1
+    )`),
   ]);
 
   const columns = await database
@@ -88,6 +98,21 @@ async function ensureSchema() {
   if (!names.has("finish_reason")) {
     await database.prepare(
       "ALTER TABLE rooms ADD COLUMN finish_reason TEXT",
+    ).run();
+  }
+
+  const playerColumns = await database
+    .prepare("PRAGMA table_info(players)")
+    .all<{ name: string }>();
+  const playerNames = new Set(playerColumns.results.map((column) => column.name));
+  if (!playerNames.has("eliminated_at")) {
+    await database.prepare(
+      "ALTER TABLE players ADD COLUMN eliminated_at INTEGER",
+    ).run();
+  }
+  if (!playerNames.has("last_seen_at")) {
+    await database.prepare(
+      "ALTER TABLE players ADD COLUMN last_seen_at INTEGER",
     ).run();
   }
 }
@@ -105,7 +130,21 @@ function accepted(topic: string, value: string) {
 }
 
 function cleanName(value: unknown) {
-  return String(value ?? "").trim().replace(/\s+/g, " ").slice(0, 12);
+  return cleanText(value, 12).replace(/\s+/g, " ");
+}
+
+function cleanText(value: unknown, maxLength: number) {
+  return String(value ?? "")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function cleanPlayerId(value: unknown) {
+  const playerId = String(value ?? "")
+    .replace(/[^A-Za-z0-9_-]/g, "")
+    .slice(0, 64);
+  return playerId || crypto.randomUUID();
 }
 
 function cleanCode(value: unknown) {
@@ -115,6 +154,37 @@ function cleanCode(value: unknown) {
 function cleanTimeLimit(value: unknown) {
   const candidate = Number(value);
   return [10, 15, 20].includes(candidate) ? candidate : 10;
+}
+
+async function enforceRateLimit(
+  playerId: string,
+  action: string,
+  limit: number,
+  windowMs: number,
+) {
+  const key = `${playerId}:${action}`;
+  const now = Date.now();
+  const current = await db()
+    .prepare("SELECT window_started_at, count FROM request_limits WHERE key = ?")
+    .bind(key)
+    .first<{ window_started_at: number; count: number }>();
+  if (!current || now - current.window_started_at >= windowMs) {
+    await db()
+      .prepare(
+        `INSERT INTO request_limits (key, window_started_at, count) VALUES (?, ?, 1)
+         ON CONFLICT(key) DO UPDATE SET window_started_at = excluded.window_started_at, count = 1`,
+      )
+      .bind(key, now)
+      .run();
+    return;
+  }
+  if (current.count >= limit) {
+    throw new Error("操作が続いています。少し待ってからもう一度お試しください");
+  }
+  await db()
+    .prepare("UPDATE request_limits SET count = count + 1 WHERE key = ?")
+    .bind(key)
+    .run();
 }
 
 async function getRoom(code: string) {
@@ -130,6 +200,28 @@ async function getPlayers(code: string) {
     .bind(code)
     .all<Player>();
   return result.results;
+}
+
+async function transferHostIfNeeded(room: Room, players: Player[]) {
+  const host = players.find((player) => player.is_host);
+  const now = Date.now();
+  const hostIsStale = Boolean(
+    room.status === "lobby" &&
+    host &&
+    now - (host.last_seen_at ?? host.joined_at) > 45_000,
+  );
+  if (host && !hostIsStale) return players;
+  const nextHost = players.find((player) => player.id !== host?.id);
+  if (!nextHost) return players;
+  await db().batch([
+    db()
+      .prepare("UPDATE players SET is_host = 0 WHERE room_code = ?")
+      .bind(room.code),
+    db()
+      .prepare("UPDATE players SET is_host = 1 WHERE id = ?")
+      .bind(nextHost.id),
+  ]);
+  return getPlayers(room.code);
 }
 
 function nextPlayer(players: Player[], currentId: string) {
@@ -163,8 +255,8 @@ async function eliminateTimedOutPlayer(room: Room) {
         )
         .bind(remaining[0]?.id ?? null, room.code, room.current_turn, room.turn_started_at),
       db()
-        .prepare("UPDATE players SET is_alive = 0 WHERE id = ?")
-        .bind(room.current_turn),
+        .prepare("UPDATE players SET is_alive = 0, eliminated_at = ? WHERE id = ?")
+        .bind(now, room.current_turn),
     ]);
     return;
   }
@@ -178,25 +270,44 @@ async function eliminateTimedOutPlayer(room: Room) {
       )
       .bind(next.id, now, room.code, room.current_turn, room.turn_started_at),
     db()
-      .prepare("UPDATE players SET is_alive = 0 WHERE id = ?")
-      .bind(room.current_turn),
+      .prepare("UPDATE players SET is_alive = 0, eliminated_at = ? WHERE id = ?")
+      .bind(now, room.current_turn),
   ]);
 }
 
 async function state(code: string, playerId?: string) {
   let room = await getRoom(code);
   if (!room) throw new Error("ROOM_NOT_FOUND");
+  if (playerId) {
+    await db()
+      .prepare(
+        "UPDATE players SET last_seen_at = ? WHERE id = ? AND room_code = ?",
+      )
+      .bind(Date.now(), playerId, code)
+      .run();
+  }
   await eliminateTimedOutPlayer(room);
   room = (await getRoom(code))!;
-  const players = await getPlayers(code);
+  let players = await getPlayers(code);
+  players = await transferHostIfNeeded(room, players);
+  const answerLimit = room.status === "finished" ? 300 : 12;
   const answerResult = await db()
     .prepare(
-      `SELECT answers.value, answers.created_at, players.name
+      `SELECT answers.value, answers.created_at, answers.player_id,
+              answers.round, players.name
        FROM answers JOIN players ON players.id = answers.player_id
-       WHERE answers.room_code = ? ORDER BY answers.created_at DESC LIMIT 8`,
+       WHERE answers.room_code = ?
+       ORDER BY answers.created_at ${room.status === "finished" ? "ASC" : "DESC"}
+       LIMIT ?`,
     )
-    .bind(code)
-    .all<{ value: string; created_at: number; name: string }>();
+    .bind(code, answerLimit)
+    .all<{
+      value: string;
+      created_at: number;
+      player_id: string;
+      round: number;
+      name: string;
+    }>();
   const answerCount = await db()
     .prepare("SELECT COUNT(*) AS count FROM answers WHERE room_code = ?")
     .bind(code)
@@ -229,6 +340,8 @@ async function state(code: string, playerId?: string) {
       isAlive: Boolean(player.is_alive),
       score: player.score,
       isYou: player.id === playerId,
+      eliminatedAt: player.eliminated_at,
+      isConnected: Date.now() - (player.last_seen_at ?? player.joined_at) < 15_000,
     })),
     answers: answerResult.results,
     serverNow: Date.now(),
@@ -254,12 +367,20 @@ async function waitingResponse(playerId: string) {
   if (!entry || entry.status !== "waiting") {
     throw new Error("マッチング待機が終了しました");
   }
+  const waiting = await db()
+    .prepare(
+      `SELECT COUNT(*) AS count FROM matchmaking_queue
+       WHERE status = 'waiting' AND difficulty = ? AND time_limit = ?`,
+    )
+    .bind(entry.difficulty, entry.time_limit)
+    .first<{ count: number }>();
   return {
     matchmaking: {
       status: "waiting",
       difficulty: entry.difficulty,
       timeLimit: entry.time_limit,
       queuedAt: entry.queued_at,
+      waitingCount: waiting?.count ?? 1,
     },
     playerId,
   };
@@ -368,14 +489,14 @@ async function attemptRandomMatch(playerId: string) {
       ),
     db()
       .prepare(
-        "INSERT INTO players (id, room_code, name, is_host, is_alive, score, joined_at) VALUES (?, ?, ?, 1, 1, 0, ?)",
+        "INSERT INTO players (id, room_code, name, is_host, is_alive, score, joined_at, last_seen_at) VALUES (?, ?, ?, 1, 1, 0, ?, ?)",
       )
-      .bind(opponent.player_id, code, opponent.name, opponent.queued_at),
+      .bind(opponent.player_id, code, opponent.name, opponent.queued_at, now),
     db()
       .prepare(
-        "INSERT INTO players (id, room_code, name, is_host, is_alive, score, joined_at) VALUES (?, ?, ?, 0, 1, 0, ?)",
+        "INSERT INTO players (id, room_code, name, is_host, is_alive, score, joined_at, last_seen_at) VALUES (?, ?, ?, 0, 1, 0, ?, ?)",
       )
-      .bind(self.player_id, code, self.name, self.queued_at),
+      .bind(self.player_id, code, self.name, self.queued_at, now),
     db()
       .prepare(
         "UPDATE matchmaking_queue SET status = 'matched', room_code = ? WHERE player_id = ?",
@@ -411,10 +532,11 @@ export async function POST(request: NextRequest) {
     await ensureSchema();
     const body = (await request.json()) as Record<string, unknown>;
     const action = String(body.action ?? "");
-    const playerId = String(body.playerId ?? crypto.randomUUID());
+    const playerId = cleanPlayerId(body.playerId);
     const now = Date.now();
 
     if (action === "matchmake") {
+      await enforceRateLimit(playerId, "matchmake", 8, 10_000);
       const name = cleanName(body.name);
       if (!name) throw new Error("名前を入力してください");
       const requestedDifficulty = String(body.difficulty ?? "C").toUpperCase();
@@ -458,6 +580,23 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "cancel_match") {
+      const entry = await getMatchEntry(playerId);
+      if (entry?.room_code) {
+        const deletion = await db()
+          .prepare("DELETE FROM rooms WHERE code = ? AND status = 'starting'")
+          .bind(entry.room_code)
+          .run();
+        if (Number(deletion.meta.changes ?? 0) === 1) {
+          await db().batch([
+            db()
+              .prepare("DELETE FROM players WHERE room_code = ?")
+              .bind(entry.room_code),
+            db()
+              .prepare("DELETE FROM matchmaking_queue WHERE room_code = ?")
+              .bind(entry.room_code),
+          ]);
+        }
+      }
       await db()
         .prepare(
           "DELETE FROM matchmaking_queue WHERE player_id = ? AND status IN ('waiting', 'claiming')",
@@ -468,6 +607,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "create") {
+      await enforceRateLimit(playerId, "create", 5, 10_000);
       const name = cleanName(body.name);
       if (!name) throw new Error("名前を入力してください");
       const timeLimit = cleanTimeLimit(body.timeLimit);
@@ -485,9 +625,9 @@ export async function POST(request: NextRequest) {
           .bind(code, timeLimit, difficulty, now),
         db()
           .prepare(
-            "INSERT INTO players (id, room_code, name, is_host, is_alive, score, joined_at) VALUES (?, ?, ?, 1, 1, 0, ?)",
+            "INSERT INTO players (id, room_code, name, is_host, is_alive, score, joined_at, last_seen_at) VALUES (?, ?, ?, 1, 1, 0, ?, ?)",
           )
-          .bind(playerId, code, name, now),
+          .bind(playerId, code, name, now, now),
       ]);
       return NextResponse.json({ ...(await state(code, playerId)), playerId });
     }
@@ -497,18 +637,81 @@ export async function POST(request: NextRequest) {
     if (!room) throw new Error("ルームが見つかりません");
 
     if (action === "join") {
+      await enforceRateLimit(playerId, "join", 6, 10_000);
       const name = cleanName(body.name);
       if (!name) throw new Error("名前を入力してください");
       if (room.status !== "lobby") throw new Error("このゲームはすでに始まっています");
       const players = await getPlayers(code);
+      const returningPlayer = players.find((player) => player.id === playerId);
+      if (returningPlayer) {
+        return NextResponse.json({ ...(await state(code, playerId)), playerId });
+      }
       if (players.length >= 8) throw new Error("このルームは満員です");
       await db()
         .prepare(
-          "INSERT INTO players (id, room_code, name, is_host, is_alive, score, joined_at) VALUES (?, ?, ?, 0, 1, 0, ?)",
+          "INSERT INTO players (id, room_code, name, is_host, is_alive, score, joined_at, last_seen_at) VALUES (?, ?, ?, 0, 1, 0, ?, ?)",
         )
-        .bind(playerId, code, name, now)
+        .bind(playerId, code, name, now, now)
         .run();
       return NextResponse.json({ ...(await state(code, playerId)), playerId });
+    }
+
+    if (action === "leave") {
+      const players = await getPlayers(code);
+      const leaving = players.find((player) => player.id === playerId);
+      if (!leaving) return NextResponse.json({ left: true });
+      if (room.status === "lobby") {
+        await db()
+          .prepare("DELETE FROM players WHERE id = ? AND room_code = ?")
+          .bind(playerId, code)
+          .run();
+        const remaining = await getPlayers(code);
+        if (!remaining.length) {
+          await db().prepare("DELETE FROM rooms WHERE code = ?").bind(code).run();
+        } else if (leaving.is_host) {
+          await db()
+            .prepare("UPDATE players SET is_host = 1 WHERE id = ?")
+            .bind(remaining[0].id)
+            .run();
+        }
+        return NextResponse.json({ left: true });
+      }
+      if (room.status === "active" && leaving.is_alive) {
+        const remaining = players.filter(
+          (player) => player.id !== playerId && player.is_alive,
+        );
+        const next = nextPlayer(players, playerId);
+        await db().batch([
+          db()
+            .prepare(
+              "UPDATE players SET is_alive = 0, eliminated_at = ?, last_seen_at = 0 WHERE id = ?",
+            )
+            .bind(now, playerId),
+          remaining.length <= 1
+            ? db()
+              .prepare(
+                "UPDATE rooms SET status = 'finished', winner_id = ?, finish_reason = 'last_survivor', current_turn = NULL WHERE code = ?",
+              )
+              .bind(remaining[0]?.id ?? null, code)
+            : room.current_turn === playerId && next
+              ? db()
+                .prepare(
+                  "UPDATE rooms SET current_turn = ?, turn_started_at = ?, round = round + 1 WHERE code = ?",
+                )
+                .bind(next.id, now, code)
+              : db().prepare("SELECT 1"),
+        ]);
+      }
+      if (leaving.is_host) {
+        const nextHost = players.find((player) => player.id !== playerId);
+        if (nextHost) {
+          await db().batch([
+            db().prepare("UPDATE players SET is_host = 0 WHERE id = ?").bind(playerId),
+            db().prepare("UPDATE players SET is_host = 1 WHERE id = ?").bind(nextHost.id),
+          ]);
+        }
+      }
+      return NextResponse.json({ left: true });
     }
 
     if (action === "start") {
@@ -528,12 +731,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(await state(code, playerId));
     }
 
+    if (action === "rematch") {
+      const players = await getPlayers(code);
+      const requester = players.find((player) => player.id === playerId);
+      if (!requester?.is_host) throw new Error("ホストだけが再戦を開始できます");
+      if (room.status !== "finished") throw new Error("ゲームはまだ終了していません");
+      await db().batch([
+        db().prepare("DELETE FROM answers WHERE room_code = ?").bind(code),
+        db()
+          .prepare(
+            "DELETE FROM players WHERE room_code = ? AND COALESCE(last_seen_at, joined_at) < ?",
+          )
+          .bind(code, now - 15_000),
+        db()
+          .prepare(
+            "UPDATE players SET is_alive = 1, score = 0, eliminated_at = NULL WHERE room_code = ?",
+          )
+          .bind(code),
+        db()
+          .prepare(
+            `UPDATE rooms SET status = 'lobby', topic = NULL, current_turn = NULL,
+             turn_started_at = NULL, winner_id = NULL, finish_reason = NULL, round = 0
+             WHERE code = ?`,
+          )
+          .bind(code),
+      ]);
+      return NextResponse.json(await state(code, playerId));
+    }
+
     if (action === "answer") {
+      await enforceRateLimit(playerId, "answer", 6, 5_000);
       await eliminateTimedOutPlayer(room);
       const freshRoom = await getRoom(code);
       if (!freshRoom || freshRoom.status !== "active") throw new Error("ゲームは終了しました");
       if (freshRoom.current_turn !== playerId) throw new Error("いまはあなたの番ではありません");
-      const value = String(body.answer ?? "").trim().slice(0, 30);
+      const value = cleanText(body.answer, 30);
       if (!value) throw new Error("答えを入力してください");
       if (!freshRoom.topic || !accepted(freshRoom.topic, value)) {
         throw new Error("その答えはお題に合っていないようです");
@@ -589,8 +821,17 @@ export async function POST(request: NextRequest) {
     throw new Error("操作を確認してください");
   } catch (error) {
     const raw = error instanceof Error ? error.message : "操作に失敗しました";
-    const message = raw.includes("UNIQUE")
-      ? "その名前はすでに使われています"
+    const message = raw.includes("answers_room_round_idx") ||
+      raw.includes("answers.room_code, answers.round")
+      ? "このターンの回答はすでに送信されています"
+      : raw.includes("answers_room_normalized_idx") ||
+          raw.includes("answers.room_code, answers.normalized")
+        ? "その答えはもう出ています"
+        : raw.includes("players_room_name_idx") ||
+            raw.includes("players.room_code, players.name")
+          ? "その名前はすでに使われています"
+          : raw.includes("UNIQUE")
+            ? "同じ内容がすでに登録されています"
       : raw;
     return NextResponse.json({ error: message }, { status: 400 });
   }

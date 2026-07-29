@@ -24,6 +24,8 @@ export const players = sqliteTable(
     isAlive: integer("is_alive", { mode: "boolean" }).notNull().default(true),
     score: integer("score").notNull().default(0),
     joinedAt: integer("joined_at").notNull(),
+    eliminatedAt: integer("eliminated_at"),
+    lastSeenAt: integer("last_seen_at"),
   },
   (table) => [uniqueIndex("players_room_name_idx").on(table.roomCode, table.name)],
 );
@@ -44,6 +46,7 @@ export const answers = sqliteTable(
       table.roomCode,
       table.normalized,
     ),
+    uniqueIndex("answers_room_round_idx").on(table.roomCode, table.round),
   ],
 );
 
@@ -67,3 +70,9 @@ export const matchmakingQueue = sqliteTable(
     ),
   ],
 );
+
+export const requestLimits = sqliteTable("request_limits", {
+  key: text("key").primaryKey(),
+  windowStartedAt: integer("window_started_at").notNull(),
+  count: integer("count").notNull().default(1),
+});
