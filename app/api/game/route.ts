@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { normalizeAnswer } from "./answer-normalization";
+import { canResumeRandomRoom } from "./matchmaking";
 import { topicByName, topicsForDifficulty } from "./topics";
 
 type Room = {
@@ -362,6 +363,15 @@ async function getMatchEntry(playerId: string) {
     .first<MatchEntry>()) ?? null;
 }
 
+async function getResumableRandomRoom(entry: MatchEntry) {
+  if (!entry.room_code) return null;
+  let room = await getRoom(entry.room_code);
+  if (!room) return null;
+  await eliminateTimedOutPlayer(room);
+  room = await getRoom(entry.room_code);
+  return canResumeRandomRoom(room?.status) ? room : null;
+}
+
 async function waitingResponse(playerId: string) {
   const entry = await getMatchEntry(playerId);
   if (!entry || entry.status !== "waiting") {
@@ -416,15 +426,44 @@ async function acknowledgeRandomMatch(entry: MatchEntry, playerId: string) {
 }
 
 async function attemptRandomMatch(playerId: string) {
-  const self = await getMatchEntry(playerId);
+  let activePlayerId = playerId;
+  let self = await getMatchEntry(playerId);
   if (!self) throw new Error("マッチング情報が見つかりません");
   if (
     (self.status === "matched" || self.status === "ready") &&
     self.room_code
   ) {
-    return acknowledgeRandomMatch(self, playerId);
+    const resumableRoom = await getResumableRandomRoom(self);
+    if (resumableRoom) return acknowledgeRandomMatch(self, playerId);
+    activePlayerId = crypto.randomUUID();
+    const queuedAt = Date.now();
+    await db().batch([
+      db()
+        .prepare("DELETE FROM matchmaking_queue WHERE player_id = ?")
+        .bind(playerId),
+      db()
+        .prepare(
+          `INSERT INTO matchmaking_queue
+           (player_id, name, difficulty, time_limit, status, room_code, queued_at)
+           VALUES (?, ?, ?, ?, 'waiting', NULL, ?)`,
+        )
+        .bind(
+          activePlayerId,
+          self.name,
+          self.difficulty,
+          self.time_limit,
+          queuedAt,
+        ),
+    ]);
+    self = {
+      ...self,
+      player_id: activePlayerId,
+      status: "waiting",
+      room_code: null,
+      queued_at: queuedAt,
+    };
   }
-  if (self.status !== "waiting") return waitingResponse(playerId);
+  if (self.status !== "waiting") return waitingResponse(activePlayerId);
 
   const pairResult = await db()
     .prepare(
@@ -435,8 +474,8 @@ async function attemptRandomMatch(playerId: string) {
     .bind(self.difficulty, self.time_limit)
     .all<MatchEntry>();
   const pair = pairResult.results;
-  if (pair.length < 2 || pair[1].player_id !== playerId) {
-    return waitingResponse(playerId);
+  if (pair.length < 2 || pair[1].player_id !== activePlayerId) {
+    return waitingResponse(activePlayerId);
   }
 
   const opponent = pair[0];
@@ -462,7 +501,7 @@ async function attemptRandomMatch(playerId: string) {
       )
       .bind(opponent.player_id, self.player_id)
       .run();
-    return waitingResponse(playerId);
+    return waitingResponse(activePlayerId);
   }
 
   let code = roomCode();
@@ -509,7 +548,7 @@ async function attemptRandomMatch(playerId: string) {
       .bind(code, self.player_id),
   ]);
 
-  return { ...(await state(code, playerId)), playerId };
+  return { ...(await state(code, activePlayerId)), playerId: activePlayerId };
 }
 
 export async function GET(request: NextRequest) {
@@ -551,14 +590,23 @@ export async function POST(request: NextRequest) {
         )
         .bind(now - 10 * 60 * 1000)
         .run();
-      const existing = await getMatchEntry(playerId);
+      let matchmakingPlayerId = playerId;
+      const existing = await getMatchEntry(matchmakingPlayerId);
       if (
         existing?.room_code &&
         (existing.status === "matched" || existing.status === "ready")
       ) {
-        return NextResponse.json(
-          await acknowledgeRandomMatch(existing, playerId),
-        );
+        const resumableRoom = await getResumableRandomRoom(existing);
+        if (resumableRoom) {
+          return NextResponse.json(
+            await acknowledgeRandomMatch(existing, playerId),
+          );
+        }
+        matchmakingPlayerId = crypto.randomUUID();
+        await db()
+          .prepare("DELETE FROM matchmaking_queue WHERE player_id = ?")
+          .bind(playerId)
+          .run();
       }
       await db()
         .prepare(
@@ -570,9 +618,9 @@ export async function POST(request: NextRequest) {
              time_limit = excluded.time_limit, status = 'waiting',
              room_code = NULL, queued_at = excluded.queued_at`,
         )
-        .bind(playerId, name, difficulty, timeLimit, now)
+        .bind(matchmakingPlayerId, name, difficulty, timeLimit, now)
         .run();
-      return NextResponse.json(await attemptRandomMatch(playerId));
+      return NextResponse.json(await attemptRandomMatch(matchmakingPlayerId));
     }
 
     if (action === "match_status") {

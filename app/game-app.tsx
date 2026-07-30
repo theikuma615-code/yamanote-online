@@ -167,6 +167,7 @@ export default function GameApp() {
   const playerAnimationTimerRef = useRef<number | null>(null);
   const previousPlayerIdsRef = useRef<Set<string>>(new Set());
   const gameRef = useRef<GameState | null>(null);
+  const flowVersionRef = useRef(0);
   const soundEnabled = useSyncExternalStore(
     subscribeSoundPreference,
     getSoundPreference,
@@ -229,15 +230,20 @@ export default function GameApp() {
     setConnection("online");
     if (effectivePlayerId) {
       const self = data.players.find((player) => player.id === effectivePlayerId);
-      saveSession({
-        roomCode: data.room.code,
-        playerId: effectivePlayerId,
-        name: self?.name ?? "",
-      });
+      if (data.room.status === "finished") {
+        clearSession();
+      } else {
+        saveSession({
+          roomCode: data.room.code,
+          playerId: effectivePlayerId,
+          name: self?.name ?? "",
+        });
+      }
     }
   }, [notify, playTone]);
 
   const call = useCallback(async (body: Record<string, unknown>) => {
+    const flowVersion = flowVersionRef.current;
     const response = await fetch("/api/game", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -248,6 +254,7 @@ export default function GameApp() {
       playerId?: string;
     };
     if (!response.ok) throw new Error(data.error || "通信に失敗しました");
+    if (flowVersion !== flowVersionRef.current) return data;
     const effectivePlayerId = data.playerId ?? String(body.playerId ?? playerId);
     if (data.playerId) setPlayerId(data.playerId);
     acceptGameState(data, effectivePlayerId);
@@ -256,6 +263,7 @@ export default function GameApp() {
   }, [acceptGameState, playerId]);
 
   const matchRequest = useCallback(async (body: Record<string, unknown>) => {
+    const flowVersion = flowVersionRef.current;
     const response = await fetch("/api/game", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -263,6 +271,7 @@ export default function GameApp() {
     });
     const data = await response.json() as MatchResponse;
     if (!response.ok) throw new Error(data.error || "マッチングに失敗しました");
+    if (flowVersion !== flowVersionRef.current) return data;
     const effectivePlayerId = data.playerId ?? String(body.playerId ?? playerId);
     if (data.playerId) setPlayerId(data.playerId);
     if (data.matchmaking) {
@@ -277,8 +286,10 @@ export default function GameApp() {
   }, [acceptGameState, playerId]);
 
   useEffect(() => {
+    const flowVersion = flowVersionRef.current;
     const restore = async () => {
       await Promise.resolve();
+      if (flowVersion !== flowVersionRef.current) return;
       const inviteCode = new URLSearchParams(window.location.search)
         .get("room")
         ?.toUpperCase()
@@ -304,12 +315,19 @@ export default function GameApp() {
         );
         if (!response.ok) throw new Error("保存したルームへ再接続できませんでした");
         const data = await response.json() as GameState;
+        if (flowVersion !== flowVersionRef.current) return;
+        if (data.room.status === "finished") {
+          clearSession();
+          setScreen("home");
+          return;
+        }
         setName(stored.name);
         setPlayerId(stored.playerId);
         acceptGameState(data, stored.playerId);
         setScreen(data.room.status === "starting" ? "match" : "room");
         notify("ルームへ再接続しました");
       } catch {
+        if (flowVersion !== flowVersionRef.current) return;
         clearSession();
         setConnection("offline");
         setError("以前のルームへ再接続できませんでした。ルームが終了した可能性があります。");
@@ -320,10 +338,12 @@ export default function GameApp() {
 
   useEffect(() => {
     if (screen !== "match" || !playerId) return;
+    const flowVersion = flowVersionRef.current;
     const poll = window.setInterval(async () => {
       try {
         await matchRequest({ action: "match_status", playerId });
       } catch (cause) {
+        if (flowVersion !== flowVersionRef.current) return;
         setConnection("reconnecting");
         setError(cause instanceof Error ? cause.message : "マッチングに失敗しました");
       }
@@ -335,6 +355,7 @@ export default function GameApp() {
 
   useEffect(() => {
     if (!roomCode || !playerId) return;
+    const flowVersion = flowVersionRef.current;
     let failures = 0;
     const poll = window.setInterval(async () => {
       try {
@@ -344,9 +365,11 @@ export default function GameApp() {
         );
         if (!response.ok) throw new Error("再接続できません");
         const data = await response.json() as GameState;
+        if (flowVersion !== flowVersionRef.current) return;
         failures = 0;
         acceptGameState(data, playerId);
       } catch {
+        if (flowVersion !== flowVersionRef.current) return;
         failures += 1;
         setConnection(failures >= 5 ? "offline" : "reconnecting");
       }
@@ -503,6 +526,7 @@ export default function GameApp() {
   };
 
   const clearGameState = () => {
+    flowVersionRef.current += 1;
     gameRef.current = null;
     previousPlayerIdsRef.current = new Set();
     setGame(null);
@@ -531,6 +555,8 @@ export default function GameApp() {
 
   const createFriendRoom = async () => {
     if (!requirePlayerName()) return;
+    clearSession();
+    clearGameState();
     const id = crypto.randomUUID();
     setPlayerId(id);
     await call({
@@ -543,6 +569,8 @@ export default function GameApp() {
   };
 
   const joinFriendRoom = async () => {
+    clearSession();
+    clearGameState();
     const id = crypto.randomUUID();
     setPlayerId(id);
     await call({
@@ -555,6 +583,8 @@ export default function GameApp() {
 
   const startRandomMatch = () => {
     if (!requirePlayerName()) return;
+    clearSession();
+    clearGameState();
     const id = crypto.randomUUID();
     setPlayerId(id);
     setMatchingSince(Date.now());
