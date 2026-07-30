@@ -277,7 +277,7 @@ export default function GameApp() {
     if (data.playerId) setPlayerId(data.playerId);
     acceptGameState(data, effectivePlayerId);
     if (data.notice) notify(data.notice);
-    setScreen("room");
+    if (body.action !== "update_settings") setScreen("room");
     return data;
   }, [acceptGameState, notify, playerId]);
 

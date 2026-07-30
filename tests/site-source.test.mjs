@@ -39,6 +39,7 @@ test("includes the core onboarding and invitation experience", async () => {
   assert.match(route, /life_enabled/);
   assert.match(route, /bomb_duration/);
   assert.match(route, /now - room\.turn_started_at >= 30_000/);
+  assert.match(app, /body\.action !== "update_settings"[\s\S]*setScreen\("room"\)/);
   assert.match(app, /接続が切れました。再接続しています/);
   assert.match(app, /\/logo-mark\.png/);
   assert.doesNotMatch(app, /quick-guide/);
