@@ -75,6 +75,7 @@ test("includes public-site metadata and required routes", async () => {
 test("keeps mobile and reduced-motion protections", async () => {
   const css = await readFile(new URL("app/globals.css", root), "utf8");
   assert.match(css, /\.lobby-settings \{[\s\S]*border: 2px solid var\(--ink\);[\s\S]*box-shadow: 7px 7px 0 var\(--ink\);/);
+  assert.match(css, /\.lobby-settings h2 \{[\s\S]*font-size: clamp\(26px, 3vw, 36px\);/);
   assert.match(css, /env\(safe-area-inset-bottom\)/);
   assert.match(css, /@media \(max-width: 340px\)/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);

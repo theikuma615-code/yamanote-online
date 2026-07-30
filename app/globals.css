@@ -520,7 +520,10 @@ input::placeholder { color: rgba(21, 21, 18, 0.35); }
   background: white;
   box-shadow: 7px 7px 0 var(--ink);
 }
-.lobby-settings h2 { margin-top: 10px; }
+.lobby-settings h2 {
+  margin-top: 10px;
+  font-size: clamp(26px, 3vw, 36px);
+}
 .lobby-setting-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
