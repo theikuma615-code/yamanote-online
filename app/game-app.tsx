@@ -771,45 +771,31 @@ export default function GameApp() {
                   ))}
                 </div>
               </div>
-              <button
-                className="primary-action friend-primary"
-                disabled={busy || !name.trim()}
-                onClick={() => void run(createFriendRoom)}
-              >
-                <span><small>おすすめ</small>友達ルームをつくる</span><b>↗</b>
-              </button>
-              <button
-                className="secondary-action"
-                disabled={busy || !name.trim()}
-                onClick={startRandomMatch}
-              >
-                <span>ランダムマッチ</span><b>⚡</b>
-              </button>
-              <div className="or-line"><span>ルームへ参加</span></div>
-              <div className="inline-join">
-                <label>
-                  <span className="sr-only">5桁のルームコード</span>
-                  <input
-                    value={joinCode}
-                    onChange={(event) =>
-                      setJoinCode(
-                        event.target.value
-                          .toUpperCase()
-                          .replace(/[^A-Z0-9]/g, "")
-                          .slice(0, 5),
-                      )}
-                    placeholder="ルームコード"
-                    maxLength={5}
-                    aria-label="5桁のルームコード"
-                  />
-                </label>
+              <div className="main-mode-actions">
                 <button
-                  disabled={busy || !name.trim() || joinCode.length !== 5}
-                  onClick={() => void run(joinFriendRoom)}
+                  className="primary-action friend-primary"
+                  disabled={busy || !name.trim()}
+                  onClick={() => void run(createFriendRoom)}
                 >
-                  参加 <span>→</span>
+                  <span><small>おすすめ</small>友達ルームをつくる</span><b>↗</b>
+                </button>
+                <button
+                  className="secondary-action"
+                  disabled={busy || !name.trim()}
+                  onClick={startRandomMatch}
+                >
+                  <span>ランダムマッチ</span><b>⚡</b>
                 </button>
               </div>
+              <button
+                className="join-action"
+                onClick={() => {
+                  setError("");
+                  setScreen("join");
+                }}
+              >
+                ルームコードで参加 <span>→</span>
+              </button>
               {error && <p className="form-error" role="alert">⚠ {error}</p>}
             </div>
             <div className="ticket-cut left" /><div className="ticket-cut right" />

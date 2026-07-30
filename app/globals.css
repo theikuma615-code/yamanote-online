@@ -328,7 +328,21 @@ input::placeholder { color: rgba(21, 21, 18, 0.35); }
   letter-spacing: 0.12em;
 }
 
-.friend-action, .secondary-action {
+.main-mode-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+  gap: 10px;
+}
+.main-mode-actions .primary-action,
+.main-mode-actions .secondary-action {
+  min-width: 0;
+  min-height: 66px;
+  margin-top: 0;
+  padding-inline: 12px;
+  font-size: 11px;
+}
+
+.secondary-action {
   width: 100%;
   min-height: 48px;
   margin-top: 13px;
@@ -342,38 +356,21 @@ input::placeholder { color: rgba(21, 21, 18, 0.35); }
   font-size: 12px;
   font-weight: 900;
 }
-.friend-action:hover:not(:disabled), .secondary-action:hover:not(:disabled) { background: var(--blue); }
+.secondary-action:hover:not(:disabled) { background: var(--blue); }
 .secondary-action b { font-size: 16px; }
 
 .join-action {
   width: 100%;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 900;
-}
-.join-action span { margin-left: 7px; color: var(--red); }
-.or-line { margin: 25px 0 18px; border-top: 1px dashed var(--line); text-align: center; }
-.or-line span { position: relative; top: -9px; padding: 0 12px; background: white; font-size: 10px; font-weight: 800; color: #777; }
-.inline-join { display: grid; grid-template-columns: 1fr auto; }
-.inline-join input {
-  min-height: 50px;
-  font: 900 15px/1 var(--font-geist-mono), monospace;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-.inline-join button {
-  min-width: 92px;
+  min-height: 46px;
+  margin-top: 17px;
   border: 1.5px solid var(--ink);
-  border-left: 0;
-  background: var(--ink);
-  color: white;
+  background: none;
   cursor: pointer;
   font-size: 12px;
   font-weight: 900;
 }
-.inline-join button span { color: var(--acid); }
+.join-action:hover { background: var(--paper); }
+.join-action span { margin-left: 7px; color: var(--red); }
 .form-error, .game-error { margin: 17px 0 0; color: #a91812; font-size: 12px; font-weight: 800; }
 .ticket-cut { position: absolute; width: 26px; height: 26px; border: 2px solid var(--ink); border-radius: 50%; background: var(--paper); bottom: 92px; }
 .ticket-cut.left { left: -15px; }
@@ -997,8 +994,6 @@ footer > span:last-child { color: var(--acid); }
   .topic-samples > div { margin-right: -16px; padding-right: 16px; }
   .ticket-body { padding: 26px 20px; }
   .difficulty-pick button small { font-size: 6.5px; }
-  .inline-join { grid-template-columns: 1fr; }
-  .inline-join button { min-height: 48px; border-left: 1.5px solid var(--ink); border-top: 0; }
   .join-panel { padding: 34px 21px; }
   .join-screen {
     align-items: start;
@@ -1055,6 +1050,9 @@ footer > span:last-child { color: var(--acid); }
 @media (max-width: 340px) {
   .brand b { font-size: 12px; }
   .brand-mark, .brand-logo { width: 36px; height: 36px; }
+  .main-mode-actions { gap: 6px; }
+  .main-mode-actions .primary-action,
+  .main-mode-actions .secondary-action { padding-inline: 8px; font-size: 10px; }
   .hero-copy h1 { font-size: 62px; }
   .ticket-body { padding: 23px 16px; }
   .difficulty-pick > div { gap: 3px; }
