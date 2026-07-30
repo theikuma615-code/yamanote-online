@@ -33,13 +33,16 @@ test("includes the core onboarding and invitation experience", async () => {
   assert.match(app, /ライフの数/);
   assert.match(app, /\{\[2, 3, 5\]\.map\(\(value\) => \(/);
   assert.match(app, /爆弾モード/);
-  assert.match(app, /30秒答えられなかった場合/);
+  assert.match(app, /30秒で別のお題に切り替える/);
   assert.match(route, /randomMatchTimeLimit = 15/);
   assert.match(route, /action === "update_settings"/);
   assert.match(route, /topic_switch_mode/);
   assert.match(route, /life_enabled/);
   assert.match(route, /bomb_duration/);
+  assert.match(route, /bomb_topic_switch_enabled/);
   assert.match(route, /now - room\.turn_started_at >= 30_000/);
+  assert.match(app, /bombTopicSwitchEnabled/);
+  assert.match(app, /お題切り替え OFF/);
   assert.match(app, /body\.action !== "update_settings"[\s\S]*setScreen\("room"\)/);
   assert.match(app, /接続が切れました。再接続しています/);
   assert.match(app, /\/logo-mark\.png/);

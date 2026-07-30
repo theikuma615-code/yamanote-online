@@ -18,6 +18,7 @@ type Room = {
   life_enabled: number;
   life_count: number;
   bomb_duration: number;
+  bomb_topic_switch_enabled: number;
   bomb_started_at: number | null;
   current_turn: string | null;
   turn_started_at: number | null;
@@ -68,7 +69,9 @@ async function ensureSchema() {
       topic_changed_round INTEGER NOT NULL DEFAULT 1,
       selected_topic TEXT, life_enabled INTEGER NOT NULL DEFAULT 0,
       life_count INTEGER NOT NULL DEFAULT 1,
-      bomb_duration INTEGER NOT NULL DEFAULT 180, bomb_started_at INTEGER,
+      bomb_duration INTEGER NOT NULL DEFAULT 180,
+      bomb_topic_switch_enabled INTEGER NOT NULL DEFAULT 1,
+      bomb_started_at INTEGER,
       current_turn TEXT, turn_started_at INTEGER, winner_id TEXT,
       finish_reason TEXT, round INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
     )`),
@@ -154,6 +157,11 @@ async function ensureSchema() {
   if (!names.has("bomb_duration")) {
     await database.prepare(
       "ALTER TABLE rooms ADD COLUMN bomb_duration INTEGER NOT NULL DEFAULT 180",
+    ).run();
+  }
+  if (!names.has("bomb_topic_switch_enabled")) {
+    await database.prepare(
+      "ALTER TABLE rooms ADD COLUMN bomb_topic_switch_enabled INTEGER NOT NULL DEFAULT 1",
     ).run();
   }
   if (!names.has("bomb_started_at")) {
@@ -512,7 +520,10 @@ async function advanceExpiredRoom(room: Room) {
       await applyBombExplosion(room);
       return;
     }
-    if (now - room.turn_started_at >= 30_000) {
+    if (
+      room.bomb_topic_switch_enabled &&
+      now - room.turn_started_at >= 30_000
+    ) {
       const nextTopic = pickTopicName(room.difficulty, null, room.topic);
       await db()
         .prepare(
@@ -592,12 +603,15 @@ async function state(code: string, playerId?: string) {
       lifeEnabled: Boolean(room.life_enabled),
       lifeCount: room.life_count,
       bombDuration: room.bomb_duration,
+      bombTopicSwitchEnabled: Boolean(room.bomb_topic_switch_enabled),
       availableTopics: topicsForDifficulty(room.difficulty).map(
         (candidate) => candidate.name,
       ),
       currentTurn: room.current_turn,
       deadline:
-        room.status === "active" && room.turn_started_at
+        room.status === "active" &&
+        room.turn_started_at &&
+        (room.mode !== "bomb" || room.bomb_topic_switch_enabled)
           ? room.turn_started_at +
             (room.mode === "bomb" ? 30_000 : room.time_limit * 1000)
           : null,
@@ -1109,6 +1123,10 @@ export async function POST(request: NextRequest) {
       const bombDuration = cleanBombDuration(
         body.bombDuration ?? room.bomb_duration,
       );
+      const bombTopicSwitchEnabled = body.bombTopicSwitchEnabled === undefined
+        ? Boolean(room.bomb_topic_switch_enabled)
+        : body.bombTopicSwitchEnabled === true ||
+          body.bombTopicSwitchEnabled === 1;
       const selectedTopic = cleanSelectedTopic(
         body.selectedTopic === undefined
           ? room.selected_topic
@@ -1122,7 +1140,7 @@ export async function POST(request: NextRequest) {
              SET difficulty = ?, time_limit = ?, mode = ?,
                  topic_switch_mode = ?, topic_switch_rounds = ?,
                  selected_topic = ?, life_enabled = ?, life_count = ?,
-                 bomb_duration = ?
+                 bomb_duration = ?, bomb_topic_switch_enabled = ?
              WHERE code = ? AND status = 'lobby'`,
           )
           .bind(
@@ -1135,6 +1153,7 @@ export async function POST(request: NextRequest) {
             lifeEnabled ? 1 : 0,
             lifeCount,
             bombDuration,
+            bombTopicSwitchEnabled ? 1 : 0,
             code,
           ),
         db()

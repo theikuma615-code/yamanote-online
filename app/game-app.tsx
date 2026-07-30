@@ -51,6 +51,7 @@ type GameState = {
     lifeEnabled: boolean;
     lifeCount: number;
     bombDuration: number;
+    bombTopicSwitchEnabled: boolean;
     availableTopics: string[];
     currentTurn: string | null;
     deadline: number | null;
@@ -1082,7 +1083,9 @@ export default function GameApp() {
               </h3>
               {game.room.mode === "bomb" ? (
                 <p>
-                  答えると爆弾が次の人へ移ります。30秒答えられないとお題が変わり、
+                  答えると爆弾が次の人へ移ります。
+                  {game.room.bombTopicSwitchEnabled &&
+                    " 30秒答えられないとお題が変わります。"}
                   爆発した瞬間に持っていた人が脱落します。
                 </p>
               ) : (
@@ -1328,7 +1331,31 @@ export default function GameApp() {
                       </button>
                     ))}
                   </div>
-                  <p>30秒答えられなかった場合は、自動で別のお題に切り替わります。</p>
+                  <div className="nested-setting bomb-topic-switch">
+                    <span>30秒で別のお題に切り替える</span>
+                    <button
+                      className={`life-toggle ${game.room.bombTopicSwitchEnabled ? "selected" : ""}`}
+                      disabled={busy || !you?.isHost}
+                      onClick={() => void run(() =>
+                        updateRoomSettings({
+                          bombTopicSwitchEnabled:
+                            !game.room.bombTopicSwitchEnabled,
+                        })
+                      )}
+                      aria-pressed={game.room.bombTopicSwitchEnabled}
+                    >
+                      <span>
+                        {game.room.bombTopicSwitchEnabled
+                          ? "お題切り替え ON"
+                          : "お題切り替え OFF"}
+                      </span>
+                      <small>
+                        {game.room.bombTopicSwitchEnabled
+                          ? "30秒答えられないと、別のお題へ切り替わります"
+                          : "爆発するまで同じお題を続けます"}
+                      </small>
+                    </button>
+                  </div>
                 </section>
               )}
             </div>
@@ -1389,21 +1416,27 @@ export default function GameApp() {
                     <p className="current-life">♥ × {current.lives}</p>
                   )}
                 </div>
-                <div className={`countdown ${remaining < 3000 ? "danger" : ""}`} aria-live="off">
-                  <b>{seconds}</b>
-                  <small>{game.room.mode === "bomb" ? "お題切替" : "SEC"}</small>
+                {(game.room.mode !== "bomb" ||
+                  game.room.bombTopicSwitchEnabled) && (
+                  <div className={`countdown ${remaining < 3000 ? "danger" : ""}`} aria-live="off">
+                    <b>{seconds}</b>
+                    <small>{game.room.mode === "bomb" ? "お題切替" : "SEC"}</small>
+                  </div>
+                )}
+              </div>
+              {(game.room.mode !== "bomb" ||
+                game.room.bombTopicSwitchEnabled) && (
+                <div
+                  className="timer-track"
+                  aria-label={
+                    game.room.mode === "bomb"
+                      ? `お題切り替えまで残り${seconds}秒`
+                      : `残り${seconds}秒`
+                  }
+                >
+                  <i style={{ width: `${timerPercent}%` }} />
                 </div>
-              </div>
-              <div
-                className="timer-track"
-                aria-label={
-                  game.room.mode === "bomb"
-                    ? `お題切り替えまで残り${seconds}秒`
-                    : `残り${seconds}秒`
-                }
-              >
-                <i style={{ width: `${timerPercent}%` }} />
-              </div>
+              )}
               {you?.isAlive ? (
                 <form className="answer-form" onSubmit={submitAnswer}>
                   <label className="sr-only" htmlFor="answer-input">回答</label>
@@ -1602,7 +1635,7 @@ export default function GameApp() {
               <b>爆弾モード</b>
               <span>
                 答えると爆弾が次の人へ移り、爆発時の所持者が脱落します。
-                30秒答えられない場合は、お題だけが切り替わります。
+                30秒でのお題切り替えは、友達ルームの設定でOFFにもできます。
               </span>
             </li>
             <li><b>ランダムマッチ</b><span>通常モード・1回答15秒固定です。</span></li>

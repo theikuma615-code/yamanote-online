@@ -14,6 +14,9 @@ export const rooms = sqliteTable("rooms", {
   lifeEnabled: integer("life_enabled", { mode: "boolean" }).notNull().default(false),
   lifeCount: integer("life_count").notNull().default(1),
   bombDuration: integer("bomb_duration").notNull().default(180),
+  bombTopicSwitchEnabled: integer("bomb_topic_switch_enabled", { mode: "boolean" })
+    .notNull()
+    .default(true),
   bombStartedAt: integer("bomb_started_at"),
   currentTurn: text("current_turn"),
   turnStartedAt: integer("turn_started_at"),

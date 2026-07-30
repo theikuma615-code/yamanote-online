@@ -1,0 +1,1 @@
+ALTER TABLE `rooms` ADD `bomb_topic_switch_enabled` integer DEFAULT true NOT NULL;
