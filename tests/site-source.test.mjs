@@ -31,6 +31,7 @@ test("includes the core onboarding and invitation experience", async () => {
   assert.match(app, /開始するお題/);
   assert.match(app, /誰かが間違えるごと/);
   assert.match(app, /ライフの数/);
+  assert.match(app, /\{\[2, 3, 5\]\.map\(\(value\) => \(/);
   assert.match(app, /爆弾モード/);
   assert.match(app, /30秒答えられなかった場合/);
   assert.match(route, /randomMatchTimeLimit = 15/);

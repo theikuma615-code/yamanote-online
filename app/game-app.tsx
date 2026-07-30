@@ -1248,8 +1248,8 @@ export default function GameApp() {
                     {game.room.topicSwitchMode === "rounds" && (
                       <div className="nested-setting">
                         <span>切り替える間隔</span>
-                        <div className="detail-choice-grid four">
-                          {[1, 2, 3, 5].map((value) => (
+                        <div className="detail-choice-grid three">
+                          {[2, 3, 5].map((value) => (
                             <button
                               key={value}
                               className={game.room.topicSwitchRounds === value ? "selected" : ""}

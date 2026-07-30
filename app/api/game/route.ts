@@ -251,7 +251,7 @@ function cleanTopicSwitchRounds(value: unknown) {
 
 function cleanLifeCount(value: unknown) {
   const candidate = Number(value);
-  return [1, 2, 3, 5].includes(candidate) ? candidate : 1;
+  return [2, 3, 5].includes(candidate) ? candidate : 2;
 }
 
 function cleanBombDuration(value: unknown) {
