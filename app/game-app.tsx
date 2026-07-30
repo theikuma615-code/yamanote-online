@@ -12,6 +12,8 @@ import {
 } from "react";
 
 type Difficulty = "S" | "A" | "B" | "C";
+type GameMode = "normal" | "bomb";
+type TopicSwitchMode = "none" | "rounds" | "miss";
 type Screen = "home" | "join" | "match" | "room" | "settings";
 
 type Player = {
@@ -20,6 +22,7 @@ type Player = {
   isHost: boolean;
   isAlive: boolean;
   score: number;
+  lives: number;
   isYou: boolean;
   eliminatedAt: number | null;
   isConnected: boolean;
@@ -27,6 +30,7 @@ type Player = {
 
 type Answer = {
   value: string;
+  topic: string;
   created_at: number;
   player_id: string;
   round: number;
@@ -40,8 +44,17 @@ type GameState = {
     topic: string | null;
     difficulty: Difficulty;
     timeLimit: number;
+    mode: GameMode;
+    topicSwitchMode: TopicSwitchMode;
+    topicSwitchRounds: number;
+    selectedTopic: string | null;
+    lifeEnabled: boolean;
+    lifeCount: number;
+    bombDuration: number;
+    availableTopics: string[];
     currentTurn: string | null;
     deadline: number | null;
+    bombDeadline: number | null;
     winnerId: string | null;
     finishReason: "completed" | "last_survivor" | null;
     isCompletable: boolean;
@@ -143,7 +156,7 @@ export default function GameApp() {
   const [screen, setScreen] = useState<Screen>("home");
   const [name, setName] = useState("");
   const [joinCode, setJoinCode] = useState("");
-  const [timeLimit, setTimeLimit] = useState(10);
+  const [timeLimit] = useState(15);
   const [difficulty, setDifficulty] = useState<Difficulty>("C");
   const [playerId, setPlayerId] = useState("");
   const [game, setGame] = useState<GameState | null>(null);
@@ -256,15 +269,17 @@ export default function GameApp() {
     const data = await response.json() as GameState & {
       error?: string;
       playerId?: string;
+      notice?: string;
     };
     if (!response.ok) throw new Error(data.error || "通信に失敗しました");
     if (flowVersion !== flowVersionRef.current) return data;
     const effectivePlayerId = data.playerId ?? String(body.playerId ?? playerId);
     if (data.playerId) setPlayerId(data.playerId);
     acceptGameState(data, effectivePlayerId);
+    if (data.notice) notify(data.notice);
     setScreen("room");
     return data;
-  }, [acceptGameState, playerId]);
+  }, [acceptGameState, notify, playerId]);
 
   const matchRequest = useCallback(async (body: Record<string, unknown>) => {
     const flowVersion = flowVersionRef.current;
@@ -413,8 +428,23 @@ export default function GameApp() {
     )
     : 0;
   const seconds = (remaining / 1000).toFixed(1);
+  const bombRemaining = game?.room.bombDeadline
+    ? Math.max(
+      0,
+      game.room.bombDeadline - (now ? now - serverOffset : game.serverNow),
+    )
+    : 0;
+  const bombSeconds = Math.ceil(bombRemaining / 1000);
   const timerPercent = game
-    ? Math.max(0, Math.min(100, (remaining / (game.room.timeLimit * 1000)) * 100))
+    ? Math.max(
+      0,
+      Math.min(
+        100,
+        (remaining /
+          (game.room.mode === "bomb" ? 30_000 : game.room.timeLimit * 1000)) *
+          100,
+      ),
+    )
     : 100;
 
   useEffect(() => {
@@ -639,17 +669,13 @@ export default function GameApp() {
     notify("同じメンバーで再戦します");
   };
 
-  const updateRoomSettings = async (
-    nextDifficulty: Difficulty,
-    nextTimeLimit: number,
-  ) => {
+  const updateRoomSettings = async (updates: Record<string, unknown>) => {
     if (!game || !you?.isHost) return;
     await call({
       action: "update_settings",
       code: game.room.code,
       playerId,
-      difficulty: nextDifficulty,
-      timeLimit: nextTimeLimit,
+      ...updates,
     });
     notify("ルーム設定を変更しました");
   };
@@ -743,7 +769,7 @@ export default function GameApp() {
           <div className="hero-copy">
             <div className="eyebrow"><span>●</span> 最後の1人まで、止まれない。</div>
             <h1>つぎ、<br /><strong>言える？</strong></h1>
-            <p>お題に合う言葉を文字で入力。<br />時間切れで即脱落のサドンデス。</p>
+            <p>お題に合う言葉を文字で入力。<br />通常モードも爆弾モードも楽しめます。</p>
             <div className="mini-rules" aria-label="ゲームの流れ">
               <span><b>01</b> お題が出る</span>
               <i>→</i>
@@ -790,21 +816,6 @@ export default function GameApp() {
                       aria-label={`難易度${level}、${difficultyLabels[level]}`}
                     >
                       <b>{level}</b><small>{difficultyLabels[level]}</small>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="time-pick">
-                <span>友達ルームの回答時間</span>
-                <div>
-                  {[10, 15, 20].map((value) => (
-                    <button
-                      key={value}
-                      className={timeLimit === value ? "selected" : ""}
-                      onClick={() => setTimeLimit(value)}
-                      aria-pressed={timeLimit === value}
-                    >
-                      {value}秒
                     </button>
                   ))}
                 </div>
@@ -962,7 +973,7 @@ export default function GameApp() {
                         className={`level-${level.toLowerCase()} ${game.room.difficulty === level ? "selected" : ""}`}
                         disabled={busy || !you?.isHost}
                         onClick={() => void run(() =>
-                          updateRoomSettings(level, game.room.timeLimit)
+                          updateRoomSettings({ difficulty: level })
                         )}
                         aria-pressed={game.room.difficulty === level}
                         aria-label={`お題レベル${level}、${difficultyLabels[level]}`}
@@ -973,22 +984,46 @@ export default function GameApp() {
                   </div>
                 </fieldset>
                 <fieldset>
-                  <legend>回答時間</legend>
-                  <div className="compact-times">
-                    {[10, 15, 20].map((value) => (
-                      <button
-                        key={value}
-                        className={game.room.timeLimit === value ? "selected" : ""}
-                        disabled={busy || !you?.isHost}
-                        onClick={() => void run(() =>
-                          updateRoomSettings(game.room.difficulty, value)
-                        )}
-                        aria-pressed={game.room.timeLimit === value}
-                      >
-                        {value}秒
-                      </button>
-                    ))}
-                  </div>
+                  <legend>
+                    {game.room.mode === "bomb" ? "爆弾タイマー" : "回答時間"}
+                  </legend>
+                  {game.room.mode === "bomb" ? (
+                    <div className="compact-times">
+                      {([
+                        [60, "1分"],
+                        [180, "3分"],
+                        [300, "5分"],
+                      ] as const).map(([value, label]) => (
+                        <button
+                          key={value}
+                          className={game.room.bombDuration === value ? "selected bomb" : ""}
+                          disabled={busy || !you?.isHost}
+                          onClick={() => void run(() =>
+                            updateRoomSettings({ bombDuration: value })
+                          )}
+                          aria-pressed={game.room.bombDuration === value}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="compact-times">
+                      {[10, 15, 20].map((value) => (
+                        <button
+                          key={value}
+                          className={game.room.timeLimit === value ? "selected" : ""}
+                          disabled={busy || !you?.isHost}
+                          onClick={() => void run(() =>
+                            updateRoomSettings({ timeLimit: value })
+                          )}
+                          aria-pressed={game.room.timeLimit === value}
+                        >
+                          {value}秒
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </fieldset>
               </div>
               <div className="lobby-setting-footer">
@@ -1037,16 +1072,35 @@ export default function GameApp() {
               </div>
             </div>
             <aside className="rule-card">
-              <span className="rule-number">LEVEL {game.room.difficulty} / {difficultyLabels[game.room.difficulty]}</span>
-              <h3>文字で答えて、<br />つないでいく。</h3>
-              <p>
-                同じ回答や登録済みの表記揺れは使えません。時間切れで脱落。
-                自由回答で判断に迷う場合は参加者同士で確認してください。
-              </p>
+              <span className="rule-number">
+                {game.room.mode === "bomb" ? "BOMB MODE" : "NORMAL MODE"} / LEVEL {game.room.difficulty}
+              </span>
+              <h3>
+                {game.room.mode === "bomb"
+                  ? <>答えて、爆弾を<br />次の人へ。</>
+                  : <>文字で答えて、<br />つないでいく。</>}
+              </h3>
+              {game.room.mode === "bomb" ? (
+                <p>
+                  答えると爆弾が次の人へ移ります。30秒答えられないとお題が変わり、
+                  爆発した瞬間に持っていた人が脱落します。
+                </p>
+              ) : (
+                <p>
+                  同じ回答や登録済みの表記揺れは使えません。
+                  {game.room.lifeEnabled
+                    ? ` 間違いや時間切れでライフが1つ減り、${game.room.lifeCount}個すべて失うと脱落します。`
+                    : " 間違いや時間切れで脱落します。"}
+                </p>
+              )}
               <button className="rule-link" onClick={() => setRulesOpen(true)}>
                 詳しい遊び方を見る
               </button>
-              <div className="limit-display"><small>TIME LIMIT</small><b>{game.room.timeLimit}</b><span>SEC</span></div>
+              <div className={`limit-display ${game.room.mode === "bomb" ? "bomb" : ""}`}>
+                <small>{game.room.mode === "bomb" ? "BOMB TIMER" : "TIME LIMIT"}</small>
+                <b>{game.room.mode === "bomb" ? game.room.bombDuration / 60 : game.room.timeLimit}</b>
+                <span>{game.room.mode === "bomb" ? "MIN" : "SEC"}</span>
+              </div>
               {you?.isHost ? (
                 <button
                   className="primary-action"
@@ -1075,11 +1129,210 @@ export default function GameApp() {
           <div className="settings-panel">
             <span className="step-label">DETAIL SETTINGS</span>
             <h2>詳細設定</h2>
-            <div className="coming-soon">
-              <span>COMING SOON</span>
-              <h3>今後実装します</h3>
-              <p>ゲームルールを細かく調整できる設定を、今後追加する予定です。</p>
+            <p className="settings-owner-note">
+              {you?.isHost ? "ホストがルールを変更できます。" : "設定の変更はホストだけが行えます。"}
+            </p>
+            <div className="settings-mode-tabs" aria-label="ゲームモード">
+              <button
+                className={game.room.mode === "normal" ? "selected" : ""}
+                disabled={busy || !you?.isHost}
+                onClick={() => void run(() =>
+                  updateRoomSettings({ mode: "normal" })
+                )}
+                aria-pressed={game.room.mode === "normal"}
+              >
+                <b>通常モード</b>
+                <small>順番に答えて生き残る</small>
+              </button>
+              <button
+                className={game.room.mode === "bomb" ? "selected bomb" : "bomb"}
+                disabled={busy || !you?.isHost}
+                onClick={() => void run(() =>
+                  updateRoomSettings({ mode: "bomb" })
+                )}
+                aria-pressed={game.room.mode === "bomb"}
+              >
+                <b>爆弾モード</b>
+                <small>爆発時に持っていた人が脱落</small>
+              </button>
             </div>
+            <div className="detail-setting-list">
+              <section>
+                <div className="detail-setting-heading">
+                  <b>お題の難易度</b><span>LEVEL</span>
+                </div>
+                <div className="detail-choice-grid four">
+                  {(["S", "A", "B", "C"] as const).map((level) => (
+                    <button
+                      key={level}
+                      className={`level-${level.toLowerCase()} ${game.room.difficulty === level ? "selected" : ""}`}
+                      disabled={busy || !you?.isHost}
+                      onClick={() => void run(() =>
+                        updateRoomSettings({ difficulty: level })
+                      )}
+                      aria-pressed={game.room.difficulty === level}
+                    >
+                      <b>{level}</b><small>{difficultyLabels[level]}</small>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section>
+                <label className="detail-setting-heading" htmlFor="topic-select">
+                  <b>開始するお題</b><span>TOPIC</span>
+                </label>
+                <select
+                  id="topic-select"
+                  value={game.room.selectedTopic ?? ""}
+                  disabled={busy || !you?.isHost}
+                  onChange={(event) => void run(() =>
+                    updateRoomSettings({
+                      selectedTopic: event.target.value || null,
+                    })
+                  )}
+                >
+                  <option value="">自動で選ぶ（ランダム）</option>
+                  {game.room.availableTopics.map((topic) => (
+                    <option key={topic} value={topic}>{topic}</option>
+                  ))}
+                </select>
+              </section>
+
+              {game.room.mode === "normal" ? (
+                <>
+                  <section>
+                    <div className="detail-setting-heading">
+                      <b>1回答の制限時間</b><span>TIME LIMIT</span>
+                    </div>
+                    <div className="detail-choice-grid three">
+                      {[10, 15, 20].map((value) => (
+                        <button
+                          key={value}
+                          className={game.room.timeLimit === value ? "selected" : ""}
+                          disabled={busy || !you?.isHost}
+                          onClick={() => void run(() =>
+                            updateRoomSettings({ timeLimit: value })
+                          )}
+                          aria-pressed={game.room.timeLimit === value}
+                        >
+                          {value}秒
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section>
+                    <div className="detail-setting-heading">
+                      <b>お題の切り替え</b><span>TOPIC CHANGE</span>
+                    </div>
+                    <div className="detail-choice-grid three">
+                      {([
+                        ["none", "切り替えなし"],
+                        ["rounds", "何周かごと"],
+                        ["miss", "誰かが間違えるごと"],
+                      ] as const).map(([value, label]) => (
+                        <button
+                          key={value}
+                          className={game.room.topicSwitchMode === value ? "selected" : ""}
+                          disabled={busy || !you?.isHost}
+                          onClick={() => void run(() =>
+                            updateRoomSettings({ topicSwitchMode: value })
+                          )}
+                          aria-pressed={game.room.topicSwitchMode === value}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {game.room.topicSwitchMode === "rounds" && (
+                      <div className="nested-setting">
+                        <span>切り替える間隔</span>
+                        <div className="detail-choice-grid four">
+                          {[1, 2, 3, 5].map((value) => (
+                            <button
+                              key={value}
+                              className={game.room.topicSwitchRounds === value ? "selected" : ""}
+                              disabled={busy || !you?.isHost}
+                              onClick={() => void run(() =>
+                                updateRoomSettings({ topicSwitchRounds: value })
+                              )}
+                              aria-pressed={game.room.topicSwitchRounds === value}
+                            >
+                              {value}周ごと
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+
+                  <section>
+                    <div className="detail-setting-heading">
+                      <b>ライフ</b><span>LIFE</span>
+                    </div>
+                    <button
+                      className={`life-toggle ${game.room.lifeEnabled ? "selected" : ""}`}
+                      disabled={busy || !you?.isHost}
+                      onClick={() => void run(() =>
+                        updateRoomSettings({ lifeEnabled: !game.room.lifeEnabled })
+                      )}
+                      aria-pressed={game.room.lifeEnabled}
+                    >
+                      <span>{game.room.lifeEnabled ? "♥ ライフ ON" : "♡ ライフ OFF"}</span>
+                      <small>間違いや時間切れで1つ減ります</small>
+                    </button>
+                    {game.room.lifeEnabled && (
+                      <div className="nested-setting">
+                        <span>ライフの数</span>
+                        <div className="detail-choice-grid four">
+                          {[1, 2, 3, 5].map((value) => (
+                            <button
+                              key={value}
+                              className={game.room.lifeCount === value ? "selected" : ""}
+                              disabled={busy || !you?.isHost}
+                              onClick={() => void run(() =>
+                                updateRoomSettings({ lifeCount: value })
+                              )}
+                              aria-pressed={game.room.lifeCount === value}
+                            >
+                              ♥ × {value}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                </>
+              ) : (
+                <section className="bomb-settings">
+                  <div className="detail-setting-heading">
+                    <b>爆弾が爆発するまで</b><span>BOMB TIMER</span>
+                  </div>
+                  <div className="detail-choice-grid three">
+                    {([
+                      [60, "1分"],
+                      [180, "3分"],
+                      [300, "5分"],
+                    ] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        className={game.room.bombDuration === value ? "selected bomb" : "bomb"}
+                        disabled={busy || !you?.isHost}
+                        onClick={() => void run(() =>
+                          updateRoomSettings({ bombDuration: value })
+                        )}
+                        aria-pressed={game.room.bombDuration === value}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <p>30秒答えられなかった場合は、自動で別のお題に切り替わります。</p>
+                </section>
+              )}
+            </div>
+            {error && <p className="form-error" role="alert">⚠ {error}</p>}
             <button className="primary-action" onClick={() => setScreen("room")}>
               <span>待機画面に戻る</span><b>←</b>
             </button>
@@ -1097,9 +1350,23 @@ export default function GameApp() {
             <span className={`difficulty-chip level-${game.room.difficulty.toLowerCase()}`}>
               LEVEL {game.room.difficulty}
             </span>
-            <span className="sudden-pill">⚡ SUDDEN DEATH</span>
+            <span className={`mode-pill ${game.room.mode}`}>
+              {game.room.mode === "bomb" ? "💣 BOMB MODE" : "⚡ NORMAL MODE"}
+            </span>
             <button className="game-leave" onClick={() => void leaveRoom()}>退出</button>
           </div>
+          {game.room.mode === "bomb" && (
+            <div
+              className={`bomb-clock ${bombSeconds <= 10 ? "danger" : ""}`}
+              role="timer"
+              aria-label={`爆発まで${formatElapsed(bombSeconds)}`}
+            >
+              <span aria-hidden="true">💣</span>
+              <small>爆発まで</small>
+              <b>{formatElapsed(bombSeconds)}</b>
+              <em>答えると次の人へ。爆発時に持っていた人が脱落</em>
+            </div>
+          )}
           <div className="topic-board">
             <span>今回のお題</span>
             <h2>{game.room.topic}</h2>
@@ -1116,14 +1383,25 @@ export default function GameApp() {
                   {avatars[Math.max(0, game.players.findIndex((player) => player.id === current?.id)) % avatars.length]}
                 </span>
                 <div>
-                  <small>NEXT ANSWER</small>
+                  <small>{game.room.mode === "bomb" ? "BOMB HOLDER" : "NEXT ANSWER"}</small>
                   <h3>{isYourTurn ? "あなたの番！" : `${current?.name ?? "…"} の番`}</h3>
+                  {game.room.mode === "normal" && game.room.lifeEnabled && current && (
+                    <p className="current-life">♥ × {current.lives}</p>
+                  )}
                 </div>
                 <div className={`countdown ${remaining < 3000 ? "danger" : ""}`} aria-live="off">
-                  <b>{seconds}</b><small>SEC</small>
+                  <b>{seconds}</b>
+                  <small>{game.room.mode === "bomb" ? "お題切替" : "SEC"}</small>
                 </div>
               </div>
-              <div className="timer-track" aria-label={`残り${seconds}秒`}>
+              <div
+                className="timer-track"
+                aria-label={
+                  game.room.mode === "bomb"
+                    ? `お題切り替えまで残り${seconds}秒`
+                    : `残り${seconds}秒`
+                }
+              >
                 <i style={{ width: `${timerPercent}%` }} />
               </div>
               {you?.isAlive ? (
@@ -1175,7 +1453,13 @@ export default function GameApp() {
                     {player.name}{player.isYou && <small> YOU</small>}
                     {!player.isConnected && <small className="offline-label"> 再接続中</small>}
                   </b>
-                  <em>{player.isAlive ? `${player.score} PT` : "OUT"}</em>
+                  <em>
+                    {player.isAlive
+                      ? game.room.mode === "normal" && game.room.lifeEnabled
+                        ? `♥ ${player.lives} · ${player.score} PT`
+                        : `${player.score} PT`
+                      : "OUT"}
+                  </em>
                 </div>
               ))}
             </aside>
@@ -1307,7 +1591,21 @@ export default function GameApp() {
             <li><b>正誤判定</b><span>登録済み回答があるお題は自動判定。自由回答は入力を受理し、迷う場合は参加者同士で確認します。</span></li>
             <li><b>重複と表記揺れ</b><span>同じ回答は使用不可。ひらがな・カタカナや登録済みの漢字表記は同じ回答として扱います。</span></li>
             <li><b>誤字</b><span>自動判定のお題では不正解になります。自由回答では自動で意味までは判定できません。</span></li>
-            <li><b>時間切れ</b><span>友達ルームで設定した時間を超えると脱落します。ランダムマッチは15秒固定です。</span></li>
+            <li>
+              <b>通常モード</b>
+              <span>
+                設定時間を超えるか自動判定で間違えると脱落します。
+                ライフをONにした場合は、ライフが0になるまで続けられます。
+              </span>
+            </li>
+            <li>
+              <b>爆弾モード</b>
+              <span>
+                答えると爆弾が次の人へ移り、爆発時の所持者が脱落します。
+                30秒答えられない場合は、お題だけが切り替わります。
+              </span>
+            </li>
+            <li><b>ランダムマッチ</b><span>通常モード・1回答15秒固定です。</span></li>
           </ol>
           <p>回答候補をすべて言い切れるお題では、その時点で残っている全員が勝利します。</p>
         </dialog>

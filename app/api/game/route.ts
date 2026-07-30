@@ -10,6 +10,15 @@ type Room = {
   topic: string | null;
   time_limit: number;
   difficulty: "S" | "A" | "B" | "C";
+  mode: "normal" | "bomb";
+  topic_switch_mode: "none" | "rounds" | "miss";
+  topic_switch_rounds: number;
+  topic_changed_round: number;
+  selected_topic: string | null;
+  life_enabled: number;
+  life_count: number;
+  bomb_duration: number;
+  bomb_started_at: number | null;
   current_turn: string | null;
   turn_started_at: number | null;
   winner_id: string | null;
@@ -27,6 +36,7 @@ type Player = {
   joined_at: number;
   eliminated_at: number | null;
   last_seen_at: number | null;
+  lives: number;
 };
 
 type MatchEntry = {
@@ -51,7 +61,14 @@ async function ensureSchema() {
   await database.batch([
     database.prepare(`CREATE TABLE IF NOT EXISTS rooms (
       code TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'lobby', topic TEXT,
-      time_limit INTEGER NOT NULL DEFAULT 10, difficulty TEXT NOT NULL DEFAULT 'C',
+      time_limit INTEGER NOT NULL DEFAULT 15, difficulty TEXT NOT NULL DEFAULT 'C',
+      mode TEXT NOT NULL DEFAULT 'normal',
+      topic_switch_mode TEXT NOT NULL DEFAULT 'none',
+      topic_switch_rounds INTEGER NOT NULL DEFAULT 1,
+      topic_changed_round INTEGER NOT NULL DEFAULT 1,
+      selected_topic TEXT, life_enabled INTEGER NOT NULL DEFAULT 0,
+      life_count INTEGER NOT NULL DEFAULT 1,
+      bomb_duration INTEGER NOT NULL DEFAULT 180, bomb_started_at INTEGER,
       current_turn TEXT, turn_started_at INTEGER, winner_id TEXT,
       finish_reason TEXT, round INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
     )`),
@@ -59,19 +76,17 @@ async function ensureSchema() {
       id TEXT PRIMARY KEY, room_code TEXT NOT NULL, name TEXT NOT NULL,
       is_host INTEGER NOT NULL DEFAULT 0, is_alive INTEGER NOT NULL DEFAULT 1,
       score INTEGER NOT NULL DEFAULT 0, joined_at INTEGER NOT NULL,
-      eliminated_at INTEGER, last_seen_at INTEGER
+      eliminated_at INTEGER, last_seen_at INTEGER, lives INTEGER NOT NULL DEFAULT 1
     )`),
     database.prepare(
       "CREATE UNIQUE INDEX IF NOT EXISTS players_room_name_idx ON players(room_code, name)",
     ),
     database.prepare(`CREATE TABLE IF NOT EXISTS answers (
       id TEXT PRIMARY KEY, room_code TEXT NOT NULL, player_id TEXT NOT NULL,
-      value TEXT NOT NULL, normalized TEXT NOT NULL, round INTEGER NOT NULL,
+      topic TEXT NOT NULL DEFAULT '', value TEXT NOT NULL,
+      normalized TEXT NOT NULL, round INTEGER NOT NULL,
       created_at INTEGER NOT NULL
     )`),
-    database.prepare(
-      "CREATE UNIQUE INDEX IF NOT EXISTS answers_room_normalized_idx ON answers(room_code, normalized)",
-    ),
     database.prepare(
       "CREATE UNIQUE INDEX IF NOT EXISTS answers_room_round_idx ON answers(room_code, round)",
     ),
@@ -103,6 +118,47 @@ async function ensureSchema() {
       "ALTER TABLE rooms ADD COLUMN finish_reason TEXT",
     ).run();
   }
+  if (!names.has("mode")) {
+    await database.prepare(
+      "ALTER TABLE rooms ADD COLUMN mode TEXT NOT NULL DEFAULT 'normal'",
+    ).run();
+  }
+  if (!names.has("topic_switch_mode")) {
+    await database.prepare(
+      "ALTER TABLE rooms ADD COLUMN topic_switch_mode TEXT NOT NULL DEFAULT 'none'",
+    ).run();
+  }
+  if (!names.has("topic_switch_rounds")) {
+    await database.prepare(
+      "ALTER TABLE rooms ADD COLUMN topic_switch_rounds INTEGER NOT NULL DEFAULT 1",
+    ).run();
+  }
+  if (!names.has("topic_changed_round")) {
+    await database.prepare(
+      "ALTER TABLE rooms ADD COLUMN topic_changed_round INTEGER NOT NULL DEFAULT 1",
+    ).run();
+  }
+  if (!names.has("selected_topic")) {
+    await database.prepare("ALTER TABLE rooms ADD COLUMN selected_topic TEXT").run();
+  }
+  if (!names.has("life_enabled")) {
+    await database.prepare(
+      "ALTER TABLE rooms ADD COLUMN life_enabled INTEGER NOT NULL DEFAULT 0",
+    ).run();
+  }
+  if (!names.has("life_count")) {
+    await database.prepare(
+      "ALTER TABLE rooms ADD COLUMN life_count INTEGER NOT NULL DEFAULT 1",
+    ).run();
+  }
+  if (!names.has("bomb_duration")) {
+    await database.prepare(
+      "ALTER TABLE rooms ADD COLUMN bomb_duration INTEGER NOT NULL DEFAULT 180",
+    ).run();
+  }
+  if (!names.has("bomb_started_at")) {
+    await database.prepare("ALTER TABLE rooms ADD COLUMN bomb_started_at INTEGER").run();
+  }
 
   const playerColumns = await database
     .prepare("PRAGMA table_info(players)")
@@ -118,6 +174,27 @@ async function ensureSchema() {
       "ALTER TABLE players ADD COLUMN last_seen_at INTEGER",
     ).run();
   }
+  if (!playerNames.has("lives")) {
+    await database.prepare(
+      "ALTER TABLE players ADD COLUMN lives INTEGER NOT NULL DEFAULT 1",
+    ).run();
+  }
+
+  const answerColumns = await database
+    .prepare("PRAGMA table_info(answers)")
+    .all<{ name: string }>();
+  const answerNames = new Set(answerColumns.results.map((column) => column.name));
+  if (!answerNames.has("topic")) {
+    await database.prepare(
+      "ALTER TABLE answers ADD COLUMN topic TEXT NOT NULL DEFAULT ''",
+    ).run();
+  }
+  await database.batch([
+    database.prepare("DROP INDEX IF EXISTS answers_room_normalized_idx"),
+    database.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS answers_room_topic_normalized_idx ON answers(room_code, topic, normalized)",
+    ),
+  ]);
 }
 
 function normalize(value: string, topic?: string | null) {
@@ -156,7 +233,50 @@ function cleanCode(value: unknown) {
 
 function cleanTimeLimit(value: unknown) {
   const candidate = Number(value);
-  return [10, 15, 20].includes(candidate) ? candidate : 10;
+  return [10, 15, 20].includes(candidate) ? candidate : 15;
+}
+
+function cleanMode(value: unknown): Room["mode"] {
+  return value === "bomb" ? "bomb" : "normal";
+}
+
+function cleanTopicSwitchMode(value: unknown): Room["topic_switch_mode"] {
+  return value === "rounds" || value === "miss" ? value : "none";
+}
+
+function cleanTopicSwitchRounds(value: unknown) {
+  const candidate = Number(value);
+  return [1, 2, 3, 5].includes(candidate) ? candidate : 1;
+}
+
+function cleanLifeCount(value: unknown) {
+  const candidate = Number(value);
+  return [1, 2, 3, 5].includes(candidate) ? candidate : 1;
+}
+
+function cleanBombDuration(value: unknown) {
+  const candidate = Number(value);
+  return [60, 180, 300].includes(candidate) ? candidate : 180;
+}
+
+function cleanSelectedTopic(value: unknown, difficulty: string) {
+  const candidate = cleanText(value, 60);
+  return topicByName(candidate)?.difficulty === difficulty ? candidate : null;
+}
+
+function pickTopicName(
+  difficulty: string,
+  preferred?: string | null,
+  exclude?: string | null,
+) {
+  const preferredTopic = preferred ? topicByName(preferred) : undefined;
+  if (preferredTopic?.difficulty === difficulty) return preferredTopic.name;
+  const candidates = topicsForDifficulty(difficulty);
+  const alternatives = candidates.filter((topic) => topic.name !== exclude);
+  const pool = alternatives.length ? alternatives : candidates;
+  const topic = pool[Math.floor(Math.random() * pool.length)];
+  if (!topic) throw new Error("お題が見つかりません");
+  return topic.name;
 }
 
 async function enforceRateLimit(
@@ -236,46 +356,184 @@ function nextPlayer(players: Player[], currentId: string) {
   return players.find((player) => player.is_alive && player.id !== currentId);
 }
 
-async function eliminateTimedOutPlayer(room: Room) {
-  if (
-    room.status !== "active" ||
-    !room.current_turn ||
-    !room.turn_started_at ||
-    Date.now() - room.turn_started_at < room.time_limit * 1000
-  ) return;
+async function applyNormalMistake(room: Room, playerId: string) {
+  const players = await getPlayers(room.code);
+  const player = players.find((candidate) => candidate.id === playerId);
+  if (!player?.is_alive || room.current_turn !== playerId) {
+    throw new Error("いまはあなたの番ではありません");
+  }
+  const remainingOpponents = players.filter(
+    (candidate) => candidate.is_alive && candidate.id !== playerId,
+  );
+  const now = Date.now();
+  const nextRound = room.round + 1;
+  const losesLastLife = !room.life_enabled || player.lives <= 1;
+  const next = nextPlayer(players, playerId);
+  const shouldSwitchTopic = room.topic_switch_mode === "miss";
+  const nextTopic = shouldSwitchTopic
+    ? pickTopicName(room.difficulty, null, room.topic)
+    : room.topic;
 
+  if (losesLastLife && remainingOpponents.length <= 1) {
+    const roomUpdate = await db()
+      .prepare(
+        "UPDATE rooms SET status = 'finished', winner_id = ?, finish_reason = 'last_survivor', current_turn = NULL WHERE code = ? AND current_turn = ? AND turn_started_at = ?",
+      )
+      .bind(
+        remainingOpponents[0]?.id ?? null,
+        room.code,
+        playerId,
+        room.turn_started_at,
+      )
+      .run();
+    if (!roomUpdate.meta.changes) return;
+    await db()
+      .prepare(
+        "UPDATE players SET is_alive = 0, lives = 0, eliminated_at = ? WHERE id = ? AND is_alive = 1",
+      )
+      .bind(now, playerId)
+      .run();
+    return { eliminated: true, lives: 0, topicChanged: false };
+  }
+
+  if (!next) return;
+  const roomUpdate = await db()
+    .prepare(
+      `UPDATE rooms
+       SET current_turn = ?, turn_started_at = ?, round = ?,
+           topic = ?, topic_changed_round = ?
+       WHERE code = ? AND current_turn = ? AND turn_started_at = ?`,
+    )
+    .bind(
+      next.id,
+      now,
+      nextRound,
+      nextTopic,
+      shouldSwitchTopic ? nextRound : room.topic_changed_round,
+      room.code,
+      playerId,
+      room.turn_started_at,
+    )
+    .run();
+  if (!roomUpdate.meta.changes) return;
+  await (
+    losesLastLife
+      ? db()
+        .prepare(
+          "UPDATE players SET is_alive = 0, lives = 0, eliminated_at = ? WHERE id = ? AND is_alive = 1",
+        )
+        .bind(now, playerId)
+      : db()
+        .prepare(
+          "UPDATE players SET lives = lives - 1 WHERE id = ? AND is_alive = 1 AND lives = ?",
+        )
+        .bind(playerId, player.lives)
+  ).run();
+  return {
+    eliminated: losesLastLife,
+    lives: losesLastLife ? 0 : player.lives - 1,
+    topicChanged: shouldSwitchTopic,
+  };
+}
+
+async function applyBombExplosion(room: Room) {
+  if (!room.current_turn) return;
   const players = await getPlayers(room.code);
   const remaining = players.filter(
     (player) => player.is_alive && player.id !== room.current_turn,
   );
   const now = Date.now();
-
   if (remaining.length <= 1) {
-    await db().batch([
-      db()
+    const roomUpdate = await db()
+      .prepare(
+        "UPDATE rooms SET status = 'finished', winner_id = ?, finish_reason = 'last_survivor', current_turn = NULL WHERE code = ? AND current_turn = ? AND bomb_started_at = ?",
+      )
+      .bind(
+        remaining[0]?.id ?? null,
+        room.code,
+        room.current_turn,
+        room.bomb_started_at,
+      )
+      .run();
+    if (!roomUpdate.meta.changes) return;
+    await db()
+      .prepare(
+        "UPDATE players SET is_alive = 0, lives = 0, eliminated_at = ? WHERE id = ? AND is_alive = 1",
+      )
+      .bind(now, room.current_turn)
+      .run();
+    return;
+  }
+  const next = nextPlayer(players, room.current_turn);
+  if (!next) return;
+  const nextRound = room.round + 1;
+  const nextTopic = pickTopicName(room.difficulty, null, room.topic);
+  const roomUpdate = await db()
+    .prepare(
+      `UPDATE rooms
+       SET current_turn = ?, turn_started_at = ?, bomb_started_at = ?,
+           round = ?, topic = ?, topic_changed_round = ?
+       WHERE code = ? AND current_turn = ? AND bomb_started_at = ?`,
+    )
+    .bind(
+      next.id,
+      now,
+      now,
+      nextRound,
+      nextTopic,
+      nextRound,
+      room.code,
+      room.current_turn,
+      room.bomb_started_at,
+    )
+    .run();
+  if (!roomUpdate.meta.changes) return;
+  await db()
+    .prepare(
+      "UPDATE players SET is_alive = 0, lives = 0, eliminated_at = ? WHERE id = ? AND is_alive = 1",
+    )
+    .bind(now, room.current_turn)
+    .run();
+}
+
+async function advanceExpiredRoom(room: Room) {
+  if (
+    room.status !== "active" ||
+    !room.current_turn ||
+    !room.turn_started_at
+  ) return;
+  const now = Date.now();
+
+  if (room.mode === "bomb") {
+    if (
+      room.bomb_started_at &&
+      now - room.bomb_started_at >= room.bomb_duration * 1000
+    ) {
+      await applyBombExplosion(room);
+      return;
+    }
+    if (now - room.turn_started_at >= 30_000) {
+      const nextTopic = pickTopicName(room.difficulty, null, room.topic);
+      await db()
         .prepare(
-          "UPDATE rooms SET status = 'finished', winner_id = ?, finish_reason = 'last_survivor', current_turn = NULL WHERE code = ? AND current_turn = ? AND turn_started_at = ?",
+          `UPDATE rooms SET topic = ?, turn_started_at = ?, topic_changed_round = round
+           WHERE code = ? AND current_turn = ? AND turn_started_at = ?`,
         )
-        .bind(remaining[0]?.id ?? null, room.code, room.current_turn, room.turn_started_at),
-      db()
-        .prepare("UPDATE players SET is_alive = 0, eliminated_at = ? WHERE id = ?")
-        .bind(now, room.current_turn),
-    ]);
+        .bind(
+          nextTopic,
+          now,
+          room.code,
+          room.current_turn,
+          room.turn_started_at,
+        )
+        .run();
+    }
     return;
   }
 
-  const next = nextPlayer(players, room.current_turn);
-  if (!next) return;
-  await db().batch([
-    db()
-      .prepare(
-        "UPDATE rooms SET current_turn = ?, turn_started_at = ?, round = round + 1 WHERE code = ? AND current_turn = ? AND turn_started_at = ?",
-      )
-      .bind(next.id, now, room.code, room.current_turn, room.turn_started_at),
-    db()
-      .prepare("UPDATE players SET is_alive = 0, eliminated_at = ? WHERE id = ?")
-      .bind(now, room.current_turn),
-  ]);
+  if (now - room.turn_started_at >= room.time_limit * 1000) {
+    await applyNormalMistake(room, room.current_turn);
+  }
 }
 
 async function state(code: string, playerId?: string) {
@@ -289,14 +547,14 @@ async function state(code: string, playerId?: string) {
       .bind(Date.now(), playerId, code)
       .run();
   }
-  await eliminateTimedOutPlayer(room);
+  await advanceExpiredRoom(room);
   room = (await getRoom(code))!;
   let players = await getPlayers(code);
   players = await transferHostIfNeeded(room, players);
   const answerLimit = room.status === "finished" ? 300 : 12;
   const answerResult = await db()
     .prepare(
-      `SELECT answers.value, answers.created_at, answers.player_id,
+      `SELECT answers.value, answers.topic, answers.created_at, answers.player_id,
               answers.round, players.name
        FROM answers JOIN players ON players.id = answers.player_id
        WHERE answers.room_code = ?
@@ -306,14 +564,17 @@ async function state(code: string, playerId?: string) {
     .bind(code, answerLimit)
     .all<{
       value: string;
+      topic: string;
       created_at: number;
       player_id: string;
       round: number;
       name: string;
     }>();
   const answerCount = await db()
-    .prepare("SELECT COUNT(*) AS count FROM answers WHERE room_code = ?")
-    .bind(code)
+    .prepare(
+      "SELECT COUNT(*) AS count FROM answers WHERE room_code = ? AND topic = ?",
+    )
+    .bind(code, room.topic ?? "")
     .first<{ count: number }>();
   const topic = topicByName(room.topic);
 
@@ -324,10 +585,27 @@ async function state(code: string, playerId?: string) {
       topic: room.topic,
       difficulty: room.difficulty,
       timeLimit: room.time_limit,
+      mode: room.mode,
+      topicSwitchMode: room.topic_switch_mode,
+      topicSwitchRounds: room.topic_switch_rounds,
+      selectedTopic: room.selected_topic,
+      lifeEnabled: Boolean(room.life_enabled),
+      lifeCount: room.life_count,
+      bombDuration: room.bomb_duration,
+      availableTopics: topicsForDifficulty(room.difficulty).map(
+        (candidate) => candidate.name,
+      ),
       currentTurn: room.current_turn,
       deadline:
         room.status === "active" && room.turn_started_at
-          ? room.turn_started_at + room.time_limit * 1000
+          ? room.turn_started_at +
+            (room.mode === "bomb" ? 30_000 : room.time_limit * 1000)
+          : null,
+      bombDeadline:
+        room.status === "active" &&
+        room.mode === "bomb" &&
+        room.bomb_started_at
+          ? room.bomb_started_at + room.bomb_duration * 1000
           : null,
       winnerId: room.winner_id,
       finishReason: room.finish_reason,
@@ -342,6 +620,7 @@ async function state(code: string, playerId?: string) {
       isHost: Boolean(player.is_host),
       isAlive: Boolean(player.is_alive),
       score: player.score,
+      lives: player.lives,
       isYou: player.id === playerId,
       eliminatedAt: player.eliminated_at,
       isConnected: Date.now() - (player.last_seen_at ?? player.joined_at) < 15_000,
@@ -369,7 +648,7 @@ async function getResumableRandomRoom(entry: MatchEntry) {
   if (!entry.room_code) return null;
   let room = await getRoom(entry.room_code);
   if (!room) return null;
-  await eliminateTimedOutPlayer(room);
+  await advanceExpiredRoom(room);
   room = await getRoom(entry.room_code);
   return canResumeRandomRoom(room?.status) ? room : null;
 }
@@ -660,7 +939,7 @@ export async function POST(request: NextRequest) {
       await enforceRateLimit(playerId, "create", 5, 10_000);
       const name = cleanName(body.name);
       if (!name) throw new Error("名前を入力してください");
-      const timeLimit = cleanTimeLimit(body.timeLimit);
+      const timeLimit = cleanTimeLimit(body.timeLimit ?? 15);
       const requestedDifficulty = String(body.difficulty ?? "C").toUpperCase();
       const difficulty = ["S", "A", "B", "C"].includes(requestedDifficulty)
         ? requestedDifficulty
@@ -734,7 +1013,7 @@ export async function POST(request: NextRequest) {
         await db().batch([
           db()
             .prepare(
-              "UPDATE players SET is_alive = 0, eliminated_at = ?, last_seen_at = 0 WHERE id = ?",
+              "UPDATE players SET is_alive = 0, lives = 0, eliminated_at = ?, last_seen_at = 0 WHERE id = ?",
             )
             .bind(now, playerId),
           remaining.length <= 1
@@ -746,9 +1025,13 @@ export async function POST(request: NextRequest) {
             : room.current_turn === playerId && next
               ? db()
                 .prepare(
-                  "UPDATE rooms SET current_turn = ?, turn_started_at = ?, round = round + 1 WHERE code = ?",
+                  `UPDATE rooms
+                   SET current_turn = ?, turn_started_at = ?,
+                       bomb_started_at = CASE WHEN mode = 'bomb' THEN ? ELSE bomb_started_at END,
+                       round = round + 1
+                   WHERE code = ?`,
                 )
-                .bind(next.id, now, code)
+                .bind(next.id, now, now, code)
               : db().prepare("SELECT 1"),
         ]);
       }
@@ -769,15 +1052,35 @@ export async function POST(request: NextRequest) {
       const requester = players.find((player) => player.id === playerId);
       if (!requester?.is_host) throw new Error("ホストだけが開始できます");
       if (players.length < 2) throw new Error("2人以上そろうと開始できます");
-      const candidates = topicsForDifficulty(room.difficulty);
-      const topic = candidates[Math.floor(Math.random() * candidates.length)];
-      if (!topic) throw new Error("お題が見つかりません");
-      await db()
-        .prepare(
-          "UPDATE rooms SET status = 'active', topic = ?, current_turn = ?, turn_started_at = ?, round = 1 WHERE code = ? AND status = 'lobby'",
-        )
-        .bind(topic.name, players[0].id, now, code)
-        .run();
+      const topic = pickTopicName(
+        room.difficulty,
+        room.selected_topic,
+      );
+      await db().batch([
+        db()
+          .prepare(
+            `UPDATE rooms
+             SET status = 'active', topic = ?, current_turn = ?,
+                 turn_started_at = ?, bomb_started_at = ?, round = 1,
+                 topic_changed_round = 1
+             WHERE code = ? AND status = 'lobby'`,
+          )
+          .bind(
+            topic,
+            players[0].id,
+            now,
+            room.mode === "bomb" ? now : null,
+            code,
+          ),
+        db()
+          .prepare(
+            "UPDATE players SET is_alive = 1, score = 0, eliminated_at = NULL, lives = ? WHERE room_code = ?",
+          )
+          .bind(
+            room.mode === "normal" && room.life_enabled ? room.life_count : 1,
+            code,
+          ),
+      ]);
       return NextResponse.json(await state(code, playerId));
     }
 
@@ -791,13 +1094,53 @@ export async function POST(request: NextRequest) {
       const difficulty = ["S", "A", "B", "C"].includes(requestedDifficulty)
         ? requestedDifficulty
         : room.difficulty;
-      const timeLimit = cleanTimeLimit(body.timeLimit);
-      await db()
-        .prepare(
-          "UPDATE rooms SET difficulty = ?, time_limit = ? WHERE code = ? AND status = 'lobby'",
-        )
-        .bind(difficulty, timeLimit, code)
-        .run();
+      const timeLimit = cleanTimeLimit(body.timeLimit ?? room.time_limit);
+      const mode = cleanMode(body.mode ?? room.mode);
+      const topicSwitchMode = cleanTopicSwitchMode(
+        body.topicSwitchMode ?? room.topic_switch_mode,
+      );
+      const topicSwitchRounds = cleanTopicSwitchRounds(
+        body.topicSwitchRounds ?? room.topic_switch_rounds,
+      );
+      const lifeEnabled = body.lifeEnabled === undefined
+        ? Boolean(room.life_enabled)
+        : body.lifeEnabled === true || body.lifeEnabled === 1;
+      const lifeCount = cleanLifeCount(body.lifeCount ?? room.life_count);
+      const bombDuration = cleanBombDuration(
+        body.bombDuration ?? room.bomb_duration,
+      );
+      const selectedTopic = cleanSelectedTopic(
+        body.selectedTopic === undefined
+          ? room.selected_topic
+          : body.selectedTopic,
+        difficulty,
+      );
+      await db().batch([
+        db()
+          .prepare(
+            `UPDATE rooms
+             SET difficulty = ?, time_limit = ?, mode = ?,
+                 topic_switch_mode = ?, topic_switch_rounds = ?,
+                 selected_topic = ?, life_enabled = ?, life_count = ?,
+                 bomb_duration = ?
+             WHERE code = ? AND status = 'lobby'`,
+          )
+          .bind(
+            difficulty,
+            timeLimit,
+            mode,
+            topicSwitchMode,
+            topicSwitchRounds,
+            selectedTopic,
+            lifeEnabled ? 1 : 0,
+            lifeCount,
+            bombDuration,
+            code,
+          ),
+        db()
+          .prepare("UPDATE players SET lives = ? WHERE room_code = ?")
+          .bind(mode === "normal" && lifeEnabled ? lifeCount : 1, code),
+      ]);
       return NextResponse.json(await state(code, playerId));
     }
 
@@ -815,13 +1158,18 @@ export async function POST(request: NextRequest) {
           .bind(code, now - 15_000),
         db()
           .prepare(
-            "UPDATE players SET is_alive = 1, score = 0, eliminated_at = NULL WHERE room_code = ?",
+            "UPDATE players SET is_alive = 1, score = 0, eliminated_at = NULL, lives = ? WHERE room_code = ?",
           )
-          .bind(code),
+          .bind(
+            room.mode === "normal" && room.life_enabled ? room.life_count : 1,
+            code,
+          ),
         db()
           .prepare(
             `UPDATE rooms SET status = 'lobby', topic = NULL, current_turn = NULL,
-             turn_started_at = NULL, winner_id = NULL, finish_reason = NULL, round = 0
+             turn_started_at = NULL, bomb_started_at = NULL,
+             winner_id = NULL, finish_reason = NULL, round = 0,
+             topic_changed_round = 1
              WHERE code = ?`,
           )
           .bind(code),
@@ -831,46 +1179,83 @@ export async function POST(request: NextRequest) {
 
     if (action === "answer") {
       await enforceRateLimit(playerId, "answer", 6, 5_000);
-      await eliminateTimedOutPlayer(room);
+      await advanceExpiredRoom(room);
       const freshRoom = await getRoom(code);
       if (!freshRoom || freshRoom.status !== "active") throw new Error("ゲームは終了しました");
       if (freshRoom.current_turn !== playerId) throw new Error("いまはあなたの番ではありません");
       const value = cleanText(body.answer, 30);
       if (!value) throw new Error("答えを入力してください");
+      const rejectAnswer = async (message: string) => {
+        if (freshRoom.mode === "bomb") throw new Error(message);
+        const result = await applyNormalMistake(freshRoom, playerId);
+        if (!result) {
+          return NextResponse.json({
+            ...(await state(code, playerId)),
+            notice: "すでに次のターンへ進んでいます。",
+          });
+        }
+        const notice = result?.eliminated
+          ? `${message} 脱落しました。`
+          : `${message} 残りライフは${result.lives}です。`;
+        return NextResponse.json({
+          ...(await state(code, playerId)),
+          notice: result.topicChanged ? `${notice} お題が変わりました。` : notice,
+        });
+      };
       if (!freshRoom.topic || !accepted(freshRoom.topic, value)) {
-        throw new Error("その答えはお題に合っていないようです");
+        return rejectAnswer("その答えはお題に合っていません。");
       }
       const normalized = normalize(value, freshRoom.topic);
       const previousAnswers = await db()
-        .prepare("SELECT value FROM answers WHERE room_code = ?")
-        .bind(code)
+        .prepare("SELECT value FROM answers WHERE room_code = ? AND topic = ?")
+        .bind(code, freshRoom.topic)
         .all<{ value: string }>();
       if (
         previousAnswers.results.some(
           (answer) => normalize(answer.value, freshRoom.topic) === normalized,
         )
       ) {
-        throw new Error("その答えはもう出ています");
+        return rejectAnswer("その答えはもう出ています。");
       }
       const players = await getPlayers(code);
       const next = nextPlayer(players, playerId);
       if (!next) throw new Error("次のプレイヤーが見つかりません");
       const topic = topicByName(freshRoom.topic);
       const count = await db()
-        .prepare("SELECT COUNT(*) AS count FROM answers WHERE room_code = ?")
-        .bind(code)
+        .prepare(
+          "SELECT COUNT(*) AS count FROM answers WHERE room_code = ? AND topic = ?",
+        )
+        .bind(code, freshRoom.topic)
         .first<{ count: number }>();
       const completesTopic = Boolean(
         topic?.completable &&
         topic.answers &&
         (count?.count ?? 0) + 1 >= topic.answers.length,
       );
+      const nextRound = freshRoom.round + 1;
+      const aliveCount = players.filter((player) => player.is_alive).length;
+      const shouldSwitchTopic = freshRoom.mode === "normal" &&
+        freshRoom.topic_switch_mode === "rounds" &&
+        nextRound - freshRoom.topic_changed_round >=
+          freshRoom.topic_switch_rounds * aliveCount;
+      const nextTopic = shouldSwitchTopic
+        ? pickTopicName(freshRoom.difficulty, null, freshRoom.topic)
+        : freshRoom.topic;
       const operations = [
         db()
           .prepare(
-            "INSERT INTO answers (id, room_code, player_id, value, normalized, round, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO answers (id, room_code, player_id, topic, value, normalized, round, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
           )
-          .bind(crypto.randomUUID(), code, playerId, value, normalized, freshRoom.round, now),
+          .bind(
+            crypto.randomUUID(),
+            code,
+            playerId,
+            freshRoom.topic,
+            value,
+            normalized,
+            freshRoom.round,
+            now,
+          ),
         db().prepare("UPDATE players SET score = score + 1 WHERE id = ?").bind(playerId),
         completesTopic
           ? db()
@@ -880,9 +1265,20 @@ export async function POST(request: NextRequest) {
             .bind(code, playerId)
           : db()
           .prepare(
-            "UPDATE rooms SET current_turn = ?, turn_started_at = ?, round = round + 1 WHERE code = ? AND current_turn = ?",
+            `UPDATE rooms
+             SET current_turn = ?, turn_started_at = ?, round = ?,
+                 topic = ?, topic_changed_round = ?
+             WHERE code = ? AND current_turn = ?`,
           )
-          .bind(next.id, now, code, playerId),
+          .bind(
+            next.id,
+            now,
+            nextRound,
+            nextTopic,
+            shouldSwitchTopic ? nextRound : freshRoom.topic_changed_round,
+            code,
+            playerId,
+          ),
       ];
       await db().batch(operations);
       return NextResponse.json(await state(code, playerId));
@@ -894,8 +1290,8 @@ export async function POST(request: NextRequest) {
     const message = raw.includes("answers_room_round_idx") ||
       raw.includes("answers.room_code, answers.round")
       ? "このターンの回答はすでに送信されています"
-      : raw.includes("answers_room_normalized_idx") ||
-          raw.includes("answers.room_code, answers.normalized")
+      : raw.includes("answers_room_topic_normalized_idx") ||
+          raw.includes("answers.room_code, answers.topic, answers.normalized")
         ? "その答えはもう出ています"
         : raw.includes("players_room_name_idx") ||
             raw.includes("players.room_code, players.name")
