@@ -662,7 +662,14 @@ export default function GameApp() {
           }}
           aria-label="ホームへ戻る"
         >
-          <span className="brand-mark">山</span>
+          <Image
+            className="brand-logo"
+            src="/logo-mark.png"
+            alt=""
+            width={48}
+            height={48}
+            priority
+          />
           <span>
             <b>山手線ゲーム</b>
             <em>オンライン</em>
@@ -700,13 +707,6 @@ export default function GameApp() {
             <div className="eyebrow"><span>●</span> 最後の1人まで、止まれない。</div>
             <h1>つぎ、<br /><strong>言える？</strong></h1>
             <p>お題に合う言葉を文字で入力。<br />時間切れで即脱落のサドンデス。</p>
-            <div className="quick-guide">
-              <p>
-                <b>文字で回答</b>
-                登録済みお題は自動判定。自由回答は参加者同士で確認します。
-              </p>
-              <button onClick={() => setRulesOpen(true)}>遊び方を見る <span>＋</span></button>
-            </div>
             <div className="mini-rules" aria-label="ゲームの流れ">
               <span><b>01</b> お題が出る</span>
               <i>→</i>
@@ -814,7 +814,6 @@ export default function GameApp() {
             </div>
             <div className="ticket-cut left" /><div className="ticket-cut right" />
           </div>
-          <div className="decor rail-a">山手線ゲームオンライン • 山手線ゲームオンライン •</div>
           <div className="decor rail-b">NO PAUSE / NO REPEAT / CLEAR TOGETHER</div>
         </section>
       )}

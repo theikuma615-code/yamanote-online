@@ -14,6 +14,9 @@ test("includes the core onboarding and invitation experience", async () => {
   assert.match(app, /line\.me\/R\/msg\/text/);
   assert.match(app, /import\("qrcode"\)/);
   assert.match(app, /接続が切れました。再接続しています/);
+  assert.match(app, /\/logo-mark\.png/);
+  assert.doesNotMatch(app, /quick-guide/);
+  assert.doesNotMatch(app, /山手線ゲームオンライン • 山手線ゲームオンライン/);
   assert.doesNotMatch(app, /dangerouslySetInnerHTML/);
 });
 
@@ -26,6 +29,7 @@ test("includes public-site metadata and required routes", async () => {
   await Promise.all([
     access(new URL("public/og.jpg", root)),
     access(new URL("public/favicon.png", root)),
+    access(new URL("public/logo-mark.png", root)),
     access(new URL("public/robots.txt", root)),
     access(new URL("public/sitemap.xml", root)),
     access(new URL("app/terms/page.tsx", root)),
