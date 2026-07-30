@@ -160,6 +160,7 @@ export default function GameApp() {
   const [waitingCount, setWaitingCount] = useState<number | null>(null);
   const [connection, setConnection] = useState<"online" | "reconnecting" | "offline">("online");
   const [latestPlayerId, setLatestPlayerId] = useState("");
+  const nameRef = useRef<HTMLInputElement>(null);
   const answerRef = useRef<HTMLInputElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const toastTimerRef = useRef<number | null>(null);
@@ -521,7 +522,15 @@ export default function GameApp() {
     setScreen("home");
   };
 
+  const requirePlayerName = () => {
+    if (name.trim()) return true;
+    setError("プレイヤー名を入力してください");
+    nameRef.current?.focus();
+    return false;
+  };
+
   const createFriendRoom = async () => {
+    if (!requirePlayerName()) return;
     const id = crypto.randomUUID();
     setPlayerId(id);
     await call({
@@ -545,6 +554,7 @@ export default function GameApp() {
   };
 
   const startRandomMatch = () => {
+    if (!requirePlayerName()) return;
     const id = crypto.randomUUID();
     setPlayerId(id);
     setMatchingSince(Date.now());
@@ -733,6 +743,7 @@ export default function GameApp() {
               <label>
                 <span>プレイヤー名（12文字まで）</span>
                 <input
+                  ref={nameRef}
                   value={name}
                   onChange={(event) => setName(event.target.value.slice(0, 12))}
                   placeholder="ニックネーム"
@@ -774,14 +785,14 @@ export default function GameApp() {
               <div className="main-mode-actions">
                 <button
                   className="primary-action friend-primary"
-                  disabled={busy || !name.trim()}
+                  disabled={busy}
                   onClick={() => void run(createFriendRoom)}
                 >
-                  <span><small>おすすめ</small>友達ルームをつくる</span><b>↗</b>
+                  <span>友達ルームをつくる</span><b>↗</b>
                 </button>
                 <button
                   className="secondary-action"
-                  disabled={busy || !name.trim()}
+                  disabled={busy}
                   onClick={startRandomMatch}
                 >
                   <span>ランダムマッチ</span><b>⚡</b>
@@ -798,7 +809,6 @@ export default function GameApp() {
               </button>
               {error && <p className="form-error" role="alert">⚠ {error}</p>}
             </div>
-            <div className="ticket-cut left" /><div className="ticket-cut right" />
           </div>
           <div className="decor rail-b">NO PAUSE / NO REPEAT / CLEAR TOGETHER</div>
         </section>

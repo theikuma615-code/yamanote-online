@@ -12,6 +12,9 @@ test("includes the core onboarding and invitation experience", async () => {
   assert.match(app, /main-mode-actions/);
   assert.match(app, /ルームコードで参加/);
   assert.doesNotMatch(app, /inline-join/);
+  assert.doesNotMatch(app, /おすすめ/);
+  assert.doesNotMatch(app, /ticket-cut/);
+  assert.match(app, /プレイヤー名を入力してください/);
   assert.match(app, /招待URLをコピー/);
   assert.match(app, /navigator\.share/);
   assert.match(app, /line\.me\/R\/msg\/text/);
