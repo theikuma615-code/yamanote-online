@@ -512,7 +512,14 @@ input::placeholder { color: rgba(21, 21, 18, 0.35); }
 .room-heading { display: flex; align-items: end; justify-content: space-between; gap: 30px; margin-bottom: 40px; }
 .room-heading h2 { margin-bottom: 0; }
 .room-heading p { margin: 13px 0 0; font-size: 13px; font-weight: 900; }
-.lobby-settings { flex: 1; min-width: 0; }
+.lobby-settings {
+  flex: 1;
+  min-width: 0;
+  padding: clamp(22px, 3vw, 30px);
+  border: 2px solid var(--ink);
+  background: white;
+  box-shadow: 7px 7px 0 var(--ink);
+}
 .lobby-settings h2 { margin-top: 10px; }
 .lobby-setting-grid {
   display: grid;
@@ -1215,6 +1222,7 @@ footer > span:last-child { color: var(--acid); }
     padding: 95px 16px calc(70px + env(safe-area-inset-bottom));
   }
   .room-heading { display: grid; }
+  .lobby-settings { padding: 20px; box-shadow: 6px 6px 0 var(--ink); }
   .lobby-setting-footer { align-items: flex-start; }
   .room-code-card, .code-chip { width: 100%; min-width: 0; }
   .room-code-card > b { font-size: 34px; }
