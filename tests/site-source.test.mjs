@@ -41,8 +41,10 @@ test("includes the core onboarding and invitation experience", async () => {
   assert.match(route, /bomb_duration/);
   assert.match(route, /bomb_topic_switch_enabled/);
   assert.match(route, /now - room\.turn_started_at >= 30_000/);
+  assert.match(route, /deadline - now <= 5_000/);
   assert.match(app, /bombTopicSwitchEnabled/);
   assert.match(app, /お題切り替え OFF/);
+  assert.match(app, /受け取った人には5秒の回答時間が保証/);
   assert.match(app, /body\.action !== "update_settings"[\s\S]*setScreen\("room"\)/);
   assert.match(app, /接続が切れました。再接続しています/);
   assert.match(app, /\/logo-mark\.png/);

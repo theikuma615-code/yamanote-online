@@ -1086,7 +1086,7 @@ export default function GameApp() {
                   答えると爆弾が次の人へ移ります。
                   {game.room.bombTopicSwitchEnabled &&
                     " 30秒答えられないとお題が変わります。"}
-                  爆発した瞬間に持っていた人が脱落します。
+                  爆発した瞬間に持っていた人が脱落し、受け取った人には最低5秒が保証されます。
                 </p>
               ) : (
                 <p>
@@ -1356,6 +1356,10 @@ export default function GameApp() {
                       </small>
                     </button>
                   </div>
+                  <p>
+                    爆弾の残り時間が5秒以下で次の人へ渡った場合も、
+                    受け取った人には5秒の回答時間が保証されます。
+                  </p>
                 </section>
               )}
             </div>
@@ -1636,6 +1640,7 @@ export default function GameApp() {
               <span>
                 答えると爆弾が次の人へ移り、爆発時の所持者が脱落します。
                 30秒でのお題切り替えは、友達ルームの設定でOFFにもできます。
+                残り5秒以下で受け取った場合も、5秒間は回答できます。
               </span>
             </li>
             <li><b>ランダムマッチ</b><span>通常モード・1回答15秒固定です。</span></li>

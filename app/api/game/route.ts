@@ -267,6 +267,16 @@ function cleanBombDuration(value: unknown) {
   return [60, 180, 300].includes(candidate) ? candidate : 180;
 }
 
+function guaranteedBombStartedAt(room: Room, now: number) {
+  if (room.mode !== "bomb" || !room.bomb_started_at) {
+    return room.bomb_started_at;
+  }
+  const deadline = room.bomb_started_at + room.bomb_duration * 1000;
+  return deadline - now <= 5_000
+    ? now + 5_000 - room.bomb_duration * 1000
+    : room.bomb_started_at;
+}
+
 function cleanSelectedTopic(value: unknown, difficulty: string) {
   const candidate = cleanText(value, 60);
   return topicByName(candidate)?.difficulty === difficulty ? candidate : null;
@@ -1260,6 +1270,7 @@ export async function POST(request: NextRequest) {
       const nextTopic = shouldSwitchTopic
         ? pickTopicName(freshRoom.difficulty, null, freshRoom.topic)
         : freshRoom.topic;
+      const nextBombStartedAt = guaranteedBombStartedAt(freshRoom, now);
       const operations = [
         db()
           .prepare(
@@ -1286,7 +1297,7 @@ export async function POST(request: NextRequest) {
           .prepare(
             `UPDATE rooms
              SET current_turn = ?, turn_started_at = ?, round = ?,
-                 topic = ?, topic_changed_round = ?
+                 topic = ?, topic_changed_round = ?, bomb_started_at = ?
              WHERE code = ? AND current_turn = ?`,
           )
           .bind(
@@ -1295,6 +1306,7 @@ export async function POST(request: NextRequest) {
             nextRound,
             nextTopic,
             shouldSwitchTopic ? nextRound : freshRoom.topic_changed_round,
+            nextBombStartedAt,
             code,
             playerId,
           ),
