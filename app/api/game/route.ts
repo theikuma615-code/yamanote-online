@@ -39,6 +39,8 @@ type MatchEntry = {
   queued_at: number;
 };
 
+const randomMatchTimeLimit = 15;
+
 function db() {
   if (!env.DB) throw new Error("Database is unavailable");
   return env.DB;
@@ -582,7 +584,7 @@ export async function POST(request: NextRequest) {
       const difficulty = ["S", "A", "B", "C"].includes(requestedDifficulty)
         ? requestedDifficulty
         : "C";
-      const timeLimit = cleanTimeLimit(body.timeLimit);
+      const timeLimit = randomMatchTimeLimit;
 
       await db()
         .prepare(
@@ -775,6 +777,26 @@ export async function POST(request: NextRequest) {
           "UPDATE rooms SET status = 'active', topic = ?, current_turn = ?, turn_started_at = ?, round = 1 WHERE code = ? AND status = 'lobby'",
         )
         .bind(topic.name, players[0].id, now, code)
+        .run();
+      return NextResponse.json(await state(code, playerId));
+    }
+
+    if (action === "update_settings") {
+      await enforceRateLimit(playerId, "update_settings", 12, 10_000);
+      const players = await getPlayers(code);
+      const requester = players.find((player) => player.id === playerId);
+      if (!requester?.is_host) throw new Error("ホストだけが設定を変更できます");
+      if (room.status !== "lobby") throw new Error("開始後は設定を変更できません");
+      const requestedDifficulty = String(body.difficulty ?? room.difficulty).toUpperCase();
+      const difficulty = ["S", "A", "B", "C"].includes(requestedDifficulty)
+        ? requestedDifficulty
+        : room.difficulty;
+      const timeLimit = cleanTimeLimit(body.timeLimit);
+      await db()
+        .prepare(
+          "UPDATE rooms SET difficulty = ?, time_limit = ? WHERE code = ? AND status = 'lobby'",
+        )
+        .bind(difficulty, timeLimit, code)
         .run();
       return NextResponse.json(await state(code, playerId));
     }

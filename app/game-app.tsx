@@ -12,7 +12,7 @@ import {
 } from "react";
 
 type Difficulty = "S" | "A" | "B" | "C";
-type Screen = "home" | "join" | "match" | "room";
+type Screen = "home" | "join" | "match" | "room" | "settings";
 
 type Player = {
   id: string;
@@ -85,6 +85,7 @@ const topicExamples: Record<Difficulty, string[]> = {
   B: ["山手線の駅", "県庁所在地", "海なし県", "草冠の漢字"],
   C: ["都道府県", "国", "動物", "果物", "お寿司のネタ"],
 };
+const randomMatchTimeLimit = 15;
 const sessionKey = "yamanote-online-session";
 const soundKey = "yamanote-online-sound";
 const soundEvent = "yamanote-sound-change";
@@ -153,8 +154,6 @@ export default function GameApp() {
   const [serverOffset, setServerOffset] = useState(0);
   const [toast, setToast] = useState("");
   const [rulesOpen, setRulesOpen] = useState(false);
-  const [qrOpen, setQrOpen] = useState(false);
-  const [qrDataUrl, setQrDataUrl] = useState("");
   const [matchingSince, setMatchingSince] = useState(0);
   const [matchingElapsed, setMatchingElapsed] = useState(0);
   const [waitingCount, setWaitingCount] = useState<number | null>(null);
@@ -228,6 +227,11 @@ export default function GameApp() {
     setServerOffset(Date.now() - data.serverNow);
     setGame(data);
     setConnection("online");
+    if (data.room.status !== "lobby") {
+      setScreen((currentScreen) =>
+        currentScreen === "settings" ? "room" : currentScreen
+      );
+    }
     if (effectivePlayerId) {
       const self = data.players.find((player) => player.id === effectivePlayerId);
       if (data.room.status === "finished") {
@@ -503,28 +507,6 @@ export default function GameApp() {
     await copyInviteUrl();
   };
 
-  const shareOnLine = () => {
-    const text = encodeURIComponent(
-      `山手線ゲームオンラインで一緒に遊ぼう！\n${inviteUrl()}`,
-    );
-    window.open(`https://line.me/R/msg/text/?${text}`, "_blank", "noopener,noreferrer");
-  };
-
-  const showQrCode = async () => {
-    try {
-      const QRCode = await import("qrcode");
-      const dataUrl = await QRCode.toDataURL(inviteUrl(), {
-        width: 320,
-        margin: 2,
-        color: { dark: "#151512", light: "#ffffff" },
-      });
-      setQrDataUrl(dataUrl);
-      setQrOpen(true);
-    } catch {
-      notify("QRコードを作成できませんでした");
-    }
-  };
-
   const clearGameState = () => {
     flowVersionRef.current += 1;
     gameRef.current = null;
@@ -594,7 +576,7 @@ export default function GameApp() {
         action: "matchmake",
         name,
         difficulty,
-        timeLimit,
+        timeLimit: randomMatchTimeLimit,
         playerId: id,
       });
       if (!data.room) setScreen("match");
@@ -657,6 +639,21 @@ export default function GameApp() {
     notify("同じメンバーで再戦します");
   };
 
+  const updateRoomSettings = async (
+    nextDifficulty: Difficulty,
+    nextTimeLimit: number,
+  ) => {
+    if (!game || !you?.isHost) return;
+    await call({
+      action: "update_settings",
+      code: game.room.code,
+      playerId,
+      difficulty: nextDifficulty,
+      timeLimit: nextTimeLimit,
+    });
+    notify("ルーム設定を変更しました");
+  };
+
   const shareResult = async () => {
     if (!game) return;
     const winner = game.players.find((player) => player.id === game.room.winnerId);
@@ -697,7 +694,7 @@ export default function GameApp() {
           className="brand"
           onClick={() => {
             if (screen === "match") void cancelMatch();
-            else if (screen === "room") void leaveRoom();
+            else if (screen === "room" || screen === "settings") void leaveRoom();
             else goHome();
           }}
           aria-label="ホームへ戻る"
@@ -798,7 +795,7 @@ export default function GameApp() {
                 </div>
               </div>
               <div className="time-pick">
-                <span>1回答の制限時間</span>
+                <span>友達ルームの回答時間</span>
                 <div>
                   {[10, 15, 20].map((value) => (
                     <button
@@ -821,11 +818,11 @@ export default function GameApp() {
                   <span>友達ルームをつくる</span><b>↗</b>
                 </button>
                 <button
-                  className="secondary-action"
+                  className="secondary-action random-action"
                   disabled={busy}
                   onClick={startRandomMatch}
                 >
-                  <span>ランダムマッチ</span><b>⚡</b>
+                  <span>ランダムマッチ<small>15秒固定</small></span><b>⚡</b>
                 </button>
               </div>
               <button
@@ -862,7 +859,7 @@ export default function GameApp() {
             </h2>
             <div className="match-conditions">
               <span><small>LEVEL</small><b>{difficulty}</b></span>
-              <span><small>TIME</small><b>{timeLimit}<em>秒</em></b></span>
+              <span><small>TIME</small><b>{randomMatchTimeLimit}<em>秒</em></b></span>
               <span><small>WAIT</small><b>{formatElapsed(matchingElapsed)}</b></span>
             </div>
             <div className="waiting-meta" aria-live="polite">
@@ -951,10 +948,53 @@ export default function GameApp() {
       {screen === "room" && game?.room.status === "lobby" && (
         <section className="lobby-screen">
           <div className="room-heading">
-            <div>
+            <div className="lobby-settings">
               <span className="step-label">WAITING ROOM</span>
-              <h2>みんなが揃うまで、<br /><strong>ちょっと待って。</strong></h2>
+              <h2>ルーム設定</h2>
               <p>{game.players.length} / 8人が参加中</p>
+              <div className="lobby-setting-grid">
+                <fieldset>
+                  <legend>お題レベル</legend>
+                  <div className="compact-levels">
+                    {(["S", "A", "B", "C"] as const).map((level) => (
+                      <button
+                        key={level}
+                        className={`level-${level.toLowerCase()} ${game.room.difficulty === level ? "selected" : ""}`}
+                        disabled={busy || !you?.isHost}
+                        onClick={() => void run(() =>
+                          updateRoomSettings(level, game.room.timeLimit)
+                        )}
+                        aria-pressed={game.room.difficulty === level}
+                        aria-label={`お題レベル${level}、${difficultyLabels[level]}`}
+                      >
+                        {level}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+                <fieldset>
+                  <legend>回答時間</legend>
+                  <div className="compact-times">
+                    {[10, 15, 20].map((value) => (
+                      <button
+                        key={value}
+                        className={game.room.timeLimit === value ? "selected" : ""}
+                        disabled={busy || !you?.isHost}
+                        onClick={() => void run(() =>
+                          updateRoomSettings(game.room.difficulty, value)
+                        )}
+                        aria-pressed={game.room.timeLimit === value}
+                      >
+                        {value}秒
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+              </div>
+              <div className="lobby-setting-footer">
+                <span>{you?.isHost ? "ホストが変更できます" : "ホストが設定を変更できます"}</span>
+                <button onClick={() => setScreen("settings")}>詳細設定 →</button>
+              </div>
             </div>
             <div className="room-code-card">
               <small>ROOM CODE</small>
@@ -971,8 +1011,6 @@ export default function GameApp() {
               <span aria-hidden="true">↗</span> 共有する
             </button>
             <button onClick={() => void copyInviteUrl()}>招待URLをコピー</button>
-            <button className="line-share" onClick={shareOnLine}>LINEで送る</button>
-            <button onClick={() => void showQrCode()}>QRコード</button>
           </div>
           <div className="lobby-content">
             <div className="players-card">
@@ -1027,6 +1065,24 @@ export default function GameApp() {
               <button className="leave-link" onClick={() => void leaveRoom()}>ルームから退出</button>
               {error && <p className="form-error" role="alert">⚠ {error}</p>}
             </aside>
+          </div>
+        </section>
+      )}
+
+      {screen === "settings" && game?.room.status === "lobby" && (
+        <section className="settings-screen">
+          <button className="back-link" onClick={() => setScreen("room")}>← 待機画面へ戻る</button>
+          <div className="settings-panel">
+            <span className="step-label">DETAIL SETTINGS</span>
+            <h2>詳細設定</h2>
+            <div className="coming-soon">
+              <span>COMING SOON</span>
+              <h3>今後実装します</h3>
+              <p>ゲームルールを細かく調整できる設定を、今後追加する予定です。</p>
+            </div>
+            <button className="primary-action" onClick={() => setScreen("room")}>
+              <span>待機画面に戻る</span><b>←</b>
+            </button>
           </div>
         </section>
       )}
@@ -1251,51 +1307,12 @@ export default function GameApp() {
             <li><b>正誤判定</b><span>登録済み回答があるお題は自動判定。自由回答は入力を受理し、迷う場合は参加者同士で確認します。</span></li>
             <li><b>重複と表記揺れ</b><span>同じ回答は使用不可。ひらがな・カタカナや登録済みの漢字表記は同じ回答として扱います。</span></li>
             <li><b>誤字</b><span>自動判定のお題では不正解になります。自由回答では自動で意味までは判定できません。</span></li>
-            <li><b>時間切れ</b><span>選択した制限時間を超えると、そのプレイヤーは脱落します。</span></li>
+            <li><b>時間切れ</b><span>友達ルームで設定した時間を超えると脱落します。ランダムマッチは15秒固定です。</span></li>
           </ol>
           <p>回答候補をすべて言い切れるお題では、その時点で残っている全員が勝利します。</p>
         </dialog>
       )}
 
-      {qrOpen && (
-        <dialog
-          open
-          className="modal qr-modal"
-          aria-labelledby="qr-title"
-          onCancel={(event) => {
-            event.preventDefault();
-            setQrOpen(false);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              setQrOpen(false);
-            }
-          }}
-        >
-          <button
-            className="modal-close"
-            onClick={() => setQrOpen(false)}
-            aria-label="QRコードを閉じる"
-            autoFocus
-          >
-            ×
-          </button>
-          <span className="step-label">SCAN TO JOIN</span>
-          <h2 id="qr-title">QRコードで参加</h2>
-          {qrDataUrl && (
-            <Image
-              src={qrDataUrl}
-              alt={`ルーム${game?.room.code ?? ""}の招待QRコード`}
-              width={280}
-              height={280}
-              unoptimized
-            />
-          )}
-          <b className="qr-code-text">{game?.room.code}</b>
-          <p>スマートフォンのカメラで読み取ると参加画面が開きます。</p>
-        </dialog>
-      )}
     </main>
   );
 }

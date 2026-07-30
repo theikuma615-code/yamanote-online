@@ -351,6 +351,14 @@ input::placeholder { color: rgba(21, 21, 18, 0.35); }
 }
 .secondary-action:hover:not(:disabled) { background: var(--blue); }
 .secondary-action b { font-size: 16px; }
+.random-action span { text-align: left; }
+.random-action small {
+  display: block;
+  margin-top: 4px;
+  color: #69655e;
+  font: 900 8px/1 var(--font-geist-mono), monospace;
+  letter-spacing: 0.08em;
+}
 
 .join-action {
   width: 100%;
@@ -517,6 +525,60 @@ input::placeholder { color: rgba(21, 21, 18, 0.35); }
 .room-heading { display: flex; align-items: end; justify-content: space-between; gap: 30px; margin-bottom: 40px; }
 .room-heading h2 { margin-bottom: 0; }
 .room-heading p { margin: 13px 0 0; font-size: 13px; font-weight: 900; }
+.lobby-settings { flex: 1; min-width: 0; }
+.lobby-settings h2 { margin-top: 10px; }
+.lobby-setting-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 10px;
+  margin-top: 20px;
+}
+.lobby-setting-grid fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1.5px solid var(--ink);
+  background: white;
+}
+.lobby-setting-grid legend {
+  padding: 0 6px;
+  font: 900 9px/1 var(--font-geist-mono), monospace;
+  letter-spacing: 0.08em;
+}
+.compact-levels, .compact-times { display: grid; gap: 5px; }
+.compact-levels { grid-template-columns: repeat(4, 1fr); }
+.compact-times { grid-template-columns: repeat(3, 1fr); }
+.compact-levels button, .compact-times button {
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 950;
+}
+.compact-levels button.selected, .compact-times button.selected {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.compact-times button.selected { background: var(--acid); }
+.lobby-setting-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 10px;
+}
+.lobby-setting-footer span { color: #666; font-size: 9px; font-weight: 800; }
+.lobby-setting-footer button {
+  min-height: 40px;
+  border: 0;
+  border-bottom: 1px solid var(--ink);
+  background: none;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
+}
 .room-code-card {
   min-width: 260px;
   padding: 17px 20px;
@@ -561,7 +623,7 @@ input::placeholder { color: rgba(21, 21, 18, 0.35); }
   padding: 17px;
   border: 2px solid var(--ink);
   display: grid;
-  grid-template-columns: minmax(190px, 1fr) repeat(4, auto);
+  grid-template-columns: minmax(190px, 1fr) repeat(2, auto);
   align-items: center;
   gap: 8px;
   background: white;
@@ -581,7 +643,6 @@ input::placeholder { color: rgba(21, 21, 18, 0.35); }
   font-weight: 900;
 }
 .invite-bar .invite-main { background: var(--acid); }
-.invite-bar .line-share { background: #29d54b; }
 .lobby-content { display: grid; grid-template-columns: 1.45fr 0.75fr; gap: 22px; }
 .players-card, .rule-card, .turn-panel, .standings {
   border: 2px solid var(--ink);
@@ -881,9 +942,41 @@ footer > span:last-child { color: var(--acid); }
 .modal li b, .modal li span { display: block; }
 .modal li b { font-size: 12px; }
 .modal li span, .modal > p { margin-top: 5px; font-size: 11px; line-height: 1.7; font-weight: 700; }
-.qr-modal { text-align: center; }
-.qr-modal img { width: min(100%, 280px); height: auto; border: 1px solid var(--ink); }
-.qr-code-text { display: block; margin-top: 12px; font: 950 25px/1 var(--font-geist-mono), monospace; letter-spacing: 0.16em; }
+.settings-screen {
+  position: relative;
+  flex: 1;
+  min-height: calc(100dvh - 124px);
+  padding: clamp(84px, 10vw, 130px) clamp(18px, 6vw, 80px);
+  display: grid;
+  place-items: center;
+}
+.settings-panel {
+  width: min(100%, 590px);
+  padding: clamp(30px, 6vw, 58px);
+  border: 2px solid var(--ink);
+  background: white;
+  box-shadow: 10px 10px 0 var(--ink);
+}
+.settings-panel h2 {
+  margin: 13px 0 28px;
+  font-size: clamp(42px, 7vw, 70px);
+  line-height: 0.95;
+  letter-spacing: -0.07em;
+}
+.coming-soon {
+  margin-bottom: 28px;
+  padding: clamp(24px, 5vw, 38px);
+  border: 1.5px solid var(--ink);
+  background: var(--paper);
+  text-align: center;
+}
+.coming-soon > span {
+  color: var(--red);
+  font: 900 9px/1 var(--font-geist-mono), monospace;
+  letter-spacing: 0.15em;
+}
+.coming-soon h3 { margin: 13px 0 8px; font-size: 24px; }
+.coming-soon p { margin: 0; color: #666; font-size: 11px; line-height: 1.7; font-weight: 700; }
 
 .legal-page, .not-found-page {
   min-height: 100dvh;
@@ -959,6 +1052,7 @@ footer > span:last-child { color: var(--acid); }
   .ticket-card { width: min(100%, 530px); justify-self: center; transform: none; }
   .lobby-content, .battle-layout { grid-template-columns: 1fr; }
   .room-heading { align-items: flex-start; }
+  .lobby-setting-grid { grid-template-columns: 1fr; }
   .invite-bar { grid-template-columns: repeat(2, 1fr); }
   .invite-bar > div { grid-column: 1 / -1; }
   .invite-bar > button { white-space: normal; }
@@ -990,6 +1084,7 @@ footer > span:last-child { color: var(--acid); }
     padding: 95px 16px calc(70px + env(safe-area-inset-bottom));
   }
   .room-heading { display: grid; }
+  .lobby-setting-footer { align-items: flex-start; }
   .room-code-card, .code-chip { width: 100%; min-width: 0; }
   .room-code-card > b { font-size: 34px; }
   .invite-bar { grid-template-columns: 1fr 1fr; margin-top: -10px; padding: 13px; }
@@ -1026,6 +1121,11 @@ footer > span:last-child { color: var(--acid); }
   .result-details { margin-top: 30px; }
   .answers-result > div:last-child { max-height: 290px; overflow-y: auto; }
   .modal { max-height: calc(100dvh - 20px); padding: 30px 21px; box-shadow: 6px 6px 0 var(--ink); }
+  .settings-screen {
+    align-items: start;
+    padding: 88px 14px calc(70px + env(safe-area-inset-bottom));
+  }
+  .settings-panel { padding: 30px 20px; box-shadow: 6px 6px 0 var(--ink); }
   .confetti { display: none; }
   footer {
     min-height: calc(54px + env(safe-area-inset-bottom));
