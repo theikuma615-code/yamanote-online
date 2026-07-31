@@ -777,23 +777,29 @@ export default function GameApp() {
 
       {screen === "home" && (
         <section className="home-grid">
-          <div className="hero-copy">
-            <div className="eyebrow"><span>●</span> 最後の1人まで、止まれない。</div>
-            <h1>つぎ、<br /><strong>言える？</strong></h1>
-            <p>お題に合う言葉を文字で入力。<br />通常モードも爆弾モードも楽しめます。</p>
-            <div className="mini-rules" aria-label="ゲームの流れ">
-              <span><b>01</b> お題が出る</span>
-              <i>→</i>
-              <span><b>02</b> 順番に入力</span>
-              <i>→</i>
-              <span><b>03</b> 最後まで残る</span>
+          <div className="home-intro">
+            <div className="hero-copy">
+              <div className="eyebrow"><span>●</span> 最後の1人まで、止まれない。</div>
+              <h1><span>つぎ、</span><strong>言える？</strong></h1>
+              <p>お題に合う言葉を文字で入力。<br />通常モードも爆弾モードも楽しめます。</p>
             </div>
-            <div className="topic-samples">
-              <span>LEVEL {difficulty} のお題例</span>
-              <div>
-                {topicExamples[difficulty].map((topic) => (
-                  <em key={topic}># {topic}</em>
-                ))}
+
+            <div className="home-learning">
+              <h2 className="mobile-section-title">遊び方</h2>
+              <div className="mini-rules" aria-label="ゲームの流れ">
+                <span><b>01</b> お題が出る</span>
+                <i>→</i>
+                <span><b>02</b> 順番に入力</span>
+                <i>→</i>
+                <span><b>03</b> 最後まで残る</span>
+              </div>
+              <div className="topic-samples">
+                <span>LEVEL {difficulty} のお題例</span>
+                <div>
+                  {topicExamples[difficulty].map((topic) => (
+                    <em key={topic}># {topic}</em>
+                  ))}
+                </div>
               </div>
             </div>
           </div>

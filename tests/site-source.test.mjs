@@ -78,7 +78,16 @@ test("keeps mobile and reduced-motion protections", async () => {
   assert.match(app, /`screen-\$\{screen\}`/);
   assert.match(app, /`room-\$\{game\.room\.status\}`/);
   assert.match(app, /lobby-start-action/);
+  assert.match(app, /home-intro/);
+  assert.match(app, /home-learning/);
+  assert.match(app, /mobile-section-title">遊び方/);
   assert.match(app, /window\.scrollTo\(0, 0\);/);
+  assert.match(css, /@media \(max-width: 768px\)/);
+  assert.match(css, /width: min\(100%, 512px\)/);
+  assert.match(css, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(css, /\.main-mode-actions \{[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(css, /\.topic-samples > div \{[\s\S]*flex-wrap: wrap;/);
+  assert.match(css, /\.difficulty-pick button\.selected::after/);
   assert.match(css, /\.lobby-settings \{[\s\S]*border: 2px solid var\(--ink\);[\s\S]*box-shadow: 7px 7px 0 var\(--ink\);/);
   assert.match(css, /\.lobby-settings h2 \{[\s\S]*font-size: clamp\(26px, 3vw, 36px\);/);
   assert.match(css, /env\(safe-area-inset-bottom\)/);

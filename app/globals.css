@@ -145,6 +145,7 @@ a { color: inherit; }
   position: relative;
 }
 
+.home-intro { min-width: 0; }
 .hero-copy { position: relative; z-index: 2; }
 .eyebrow, .step-label {
   font: 800 11px/1 var(--font-geist-mono), monospace;
@@ -159,6 +160,12 @@ a { color: inherit; }
   line-height: 0.82;
   letter-spacing: -0.095em;
   font-weight: 950;
+}
+
+.hero-copy h1 > span,
+.hero-copy h1 strong {
+  display: block;
+  white-space: nowrap;
 }
 
 .hero-copy h1 strong {
@@ -226,6 +233,7 @@ a { color: inherit; }
   font-style: normal;
   font-weight: 800;
 }
+.mobile-section-title { display: none; }
 
 .ticket-card {
   background: white;
@@ -303,6 +311,7 @@ input::placeholder { color: rgba(21, 21, 18, 0.35); }
   transition: transform 120ms ease, box-shadow 120ms ease;
 }
 .primary-action:hover:not(:disabled) { transform: translate(3px, 3px); box-shadow: 2px 2px 0 var(--ink); }
+.primary-action:active:not(:disabled) { transform: translate(4px, 4px); box-shadow: 1px 1px 0 var(--ink); }
 .primary-action b { font-size: 22px; }
 .friend-primary { min-height: 66px; }
 .friend-primary span { text-align: left; }
@@ -337,6 +346,8 @@ input::placeholder { color: rgba(21, 21, 18, 0.35); }
   font-weight: 900;
 }
 .secondary-action:hover:not(:disabled) { background: var(--blue); }
+.secondary-action:active:not(:disabled),
+.join-action:active { transform: translateY(2px); }
 .secondary-action b { font-size: 16px; }
 .random-action span { text-align: left; }
 .random-action small {
@@ -1203,6 +1214,193 @@ footer > span:last-child { color: var(--acid); }
   .answers-result { grid-column: auto; }
 }
 
+@media (max-width: 768px) {
+  html { scroll-padding-top: calc(70px + env(safe-area-inset-top)); }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    height: calc(68px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 16px 0;
+    box-shadow: 0 3px 0 rgba(21, 21, 18, 0.08);
+  }
+  .live-pill { display: none; }
+  .brand { min-width: 0; gap: 8px; }
+  .brand-logo { width: 40px; height: 40px; }
+  .brand > span { min-width: 0; }
+  .brand b { font-size: 13px; white-space: nowrap; }
+  .brand em { font-size: 9px; white-space: nowrap; }
+  .sound-toggle {
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+  .sound-toggle span { font-size: 18px; }
+  .sound-toggle b { display: none; }
+
+  .home-grid {
+    width: min(100%, 512px);
+    min-height: auto;
+    margin-inline: auto;
+    padding: 28px 16px calc(52px + env(safe-area-inset-bottom));
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 22px;
+    overflow: clip;
+  }
+  .home-intro { display: contents; }
+  .hero-copy {
+    order: 1;
+    width: 100%;
+    min-width: 0;
+  }
+  .eyebrow { display: none; }
+  .hero-copy h1 {
+    margin: 0 0 14px;
+    font-size: clamp(58px, 14vw, 92px);
+    line-height: 0.84;
+  }
+  .hero-copy h1 strong {
+    -webkit-text-stroke-width: 1.5px;
+    text-shadow: 3px 3px 0 var(--ink);
+  }
+  .hero-copy > p {
+    font-size: clamp(13px, 2.2vw, 16px);
+    line-height: 1.6;
+  }
+
+  .ticket-card {
+    order: 2;
+    width: min(100%, 480px);
+    max-width: 100%;
+    justify-self: center;
+    transform: none;
+  }
+  .ticket-stripe { display: none; }
+  .ticket-body { padding: clamp(18px, 4vw, 24px); }
+  .ticket-body input {
+    min-height: 52px;
+    font-size: 16px;
+  }
+  .difficulty-pick { margin-top: 18px; gap: 9px; }
+  .difficulty-pick > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .difficulty-pick button {
+    position: relative;
+    min-height: 52px;
+    padding: 7px 28px 7px 8px;
+  }
+  .difficulty-pick button b { font-size: 19px; }
+  .difficulty-pick button small {
+    margin-top: 4px;
+    font-size: 9px;
+    white-space: normal;
+  }
+  .difficulty-pick button.selected {
+    outline: 2px solid white;
+    outline-offset: -5px;
+    box-shadow: 4px 4px 0 var(--ink);
+    transform: none;
+  }
+  .difficulty-pick button.selected::after {
+    content: "✓";
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--ink);
+    color: white;
+    font-size: 11px;
+    font-weight: 950;
+  }
+  .main-mode-actions {
+    margin-top: 18px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .main-mode-actions .primary-action,
+  .main-mode-actions .secondary-action {
+    min-height: 54px;
+    padding-inline: 16px;
+    font-size: 13px;
+  }
+  .main-mode-actions .friend-primary {
+    min-height: 60px;
+    font-size: 14px;
+  }
+  .random-action small { margin-top: 3px; font-size: 8px; }
+  .join-action {
+    min-height: 50px;
+    margin-top: 12px;
+    background: var(--paper);
+  }
+
+  .home-learning {
+    order: 3;
+    width: 100%;
+    min-width: 0;
+  }
+  .mobile-section-title {
+    display: block;
+    margin: 0;
+    font-size: clamp(19px, 4.2vw, 24px);
+    letter-spacing: -0.04em;
+  }
+  .mini-rules {
+    margin-top: 9px;
+    padding-top: 13px;
+    display: grid;
+    align-items: stretch;
+    gap: 8px;
+    overflow: visible;
+  }
+  .mini-rules span {
+    min-height: 48px;
+    padding: 10px 12px;
+    border: 1px solid var(--ink);
+    background: white;
+    white-space: normal;
+  }
+  .mini-rules b { font-size: 12px; }
+  .mini-rules i { display: none; }
+  .topic-samples { width: 100%; margin-top: 22px; }
+  .topic-samples > div {
+    margin-right: 0;
+    padding: 0;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+  .topic-samples em {
+    flex: 0 1 auto;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+  .decor { display: none; }
+
+  footer {
+    min-height: calc(58px + env(safe-area-inset-bottom));
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    justify-content: center;
+    flex-wrap: wrap;
+    text-align: center;
+    line-height: 1.5;
+  }
+  footer nav {
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+  }
+}
+
 @media (max-width: 560px) {
   html { scroll-padding-bottom: calc(86px + env(safe-area-inset-bottom)); }
   body { overscroll-behavior-y: none; }
@@ -1210,63 +1408,33 @@ footer > span:last-child { color: var(--acid); }
   input, select { font-size: 16px; }
 
   .topbar {
-    position: sticky;
-    top: 0;
-    height: calc(64px + env(safe-area-inset-top));
-    padding: env(safe-area-inset-top) 12px 0;
-    box-shadow: 0 3px 0 rgba(21, 21, 18, 0.08);
+    height: calc(62px + env(safe-area-inset-top));
+    padding-inline: 12px;
   }
-  .live-pill { display: none; }
   .brand { gap: 8px; }
-  .brand-logo { width: 40px; height: 40px; }
+  .brand-logo { width: 38px; height: 38px; }
   .brand b { font-size: 13px; }
   .brand em { font-size: 9px; }
-  .sound-toggle { min-width: 43px; padding: 0 10px; }
-  .sound-toggle b { display: none; }
+  .sound-toggle { flex-basis: 42px; width: 42px; min-width: 42px; min-height: 42px; }
   .home-grid {
-    min-height: auto;
-    padding: 30px 14px calc(54px + env(safe-area-inset-bottom));
-    gap: 26px;
+    padding: 20px 16px calc(48px + env(safe-area-inset-bottom));
+    gap: 17px;
   }
-  .eyebrow { font-size: 9px; }
   .hero-copy h1 {
-    margin: 14px 0 13px;
-    font-size: clamp(56px, 18vw, 72px);
+    margin: 0 0 11px;
+    font-size: clamp(54px, 17vw, 72px);
     line-height: 0.86;
   }
-  .hero-copy h1 strong {
-    -webkit-text-stroke-width: 1.5px;
-    text-shadow: 3px 3px 0 var(--ink);
-  }
   .hero-copy > p { font-size: 13px; line-height: 1.55; }
-  .mini-rules {
-    gap: 8px;
-    margin-top: 22px;
-    padding-top: 13px;
-    padding-bottom: 4px;
-    overflow-x: auto;
-    font-size: 10px;
-  }
-  .mini-rules i { display: none; }
-  .topic-samples { margin-top: 18px; }
-  .topic-samples > div { margin-right: -16px; padding-right: 16px; }
   .ticket-card { border-width: 1.5px; box-shadow: 6px 6px 0 var(--ink); }
-  .ticket-stripe { height: 40px; padding-inline: 15px; }
-  .ticket-body { padding: 21px 16px; }
-  .ticket-body input { min-height: 52px; }
-  .difficulty-pick { margin-top: 18px; }
+  .ticket-body { padding: 17px 15px; }
+  .difficulty-pick { margin-top: 16px; }
   .difficulty-pick button { min-height: 50px; }
-  .difficulty-pick button small { font-size: 6.5px; }
-  .main-mode-actions { margin-top: 18px; gap: 7px; }
-  .main-mode-actions .primary-action,
-  .main-mode-actions .secondary-action {
-    min-height: 68px;
-    padding-inline: 9px;
-    font-size: 10px;
-  }
+  .main-mode-actions { margin-top: 16px; }
   .main-mode-actions .primary-action b,
-  .main-mode-actions .secondary-action b { font-size: 17px; }
-  .join-action { min-height: 50px; margin-top: 14px; }
+  .main-mode-actions .secondary-action b { font-size: 18px; }
+  .mini-rules { padding-top: 13px; font-size: 10px; }
+  .topic-samples { margin-top: 18px; }
   .join-panel { padding: 29px 18px; box-shadow: 6px 6px 0 var(--ink); }
   .join-screen {
     align-items: start;
@@ -1479,13 +1647,13 @@ footer > span:last-child { color: var(--acid); }
 @media (max-width: 340px) {
   .brand b { font-size: 12px; }
   .brand-mark, .brand-logo { width: 36px; height: 36px; }
-  .main-mode-actions { gap: 6px; }
+  .main-mode-actions { gap: 8px; }
   .main-mode-actions .primary-action,
-  .main-mode-actions .secondary-action { padding-inline: 8px; font-size: 10px; }
+  .main-mode-actions .secondary-action { padding-inline: 12px; font-size: 12px; }
   .hero-copy h1 { font-size: 54px; }
-  .ticket-body { padding: 23px 16px; }
-  .difficulty-pick > div { gap: 3px; }
-  .difficulty-pick button small { font-size: 6px; }
+  .ticket-body { padding: 15px 14px; }
+  .difficulty-pick > div { gap: 7px; }
+  .difficulty-pick button small { font-size: 8px; }
   .detail-choice-grid.four { grid-template-columns: repeat(2, 1fr); }
   .invite-bar { grid-template-columns: 1fr; }
   .invite-bar > div, .invite-bar .invite-main { grid-column: auto; }
