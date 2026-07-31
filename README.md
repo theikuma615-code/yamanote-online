@@ -4,7 +4,7 @@
 
 ## プレイ
 
-**[山手線ゲームオンラインを開く](https://yamanote-online.the-ikuma615.workers.dev)**
+**[山手線ゲームオンラインを開く](https://yamanote-online.190otk.workers.dev)**
 
 ## 主な機能
 

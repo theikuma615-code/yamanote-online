@@ -1,21 +1,11 @@
 import vinext from "vinext";
 import { defineConfig } from "vite";
 
-const LOCAL_DATABASE_ID =
-  "00000000-0000-4000-8000-000000000000";
-
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
 const localBindingConfig = {
   main: "./worker/index.ts",
-  d1_databases: [
-    {
-      binding: "DB",
-      database_name: "yamanote-online-db",
-      database_id: LOCAL_DATABASE_ID,
-    },
-  ],
 };
 
 export default defineConfig(async () => {

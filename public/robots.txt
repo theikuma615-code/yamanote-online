@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /api/
 
-Sitemap: https://yamanote-online.the-ikuma615.workers.dev/sitemap.xml
+Sitemap: https://yamanote-online.190otk.workers.dev/sitemap.xml

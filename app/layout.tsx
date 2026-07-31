@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://yamanote-online.the-ikuma615.workers.dev"),
+  metadataBase: new URL("https://yamanote-online.190otk.workers.dev"),
   title: {
     default: "山手線ゲームオンライン｜友達と無料で遊べるオンラインゲーム",
     template: "%s｜山手線ゲームオンライン",
