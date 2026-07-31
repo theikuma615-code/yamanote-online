@@ -73,10 +73,19 @@ test("includes public-site metadata and required routes", async () => {
 });
 
 test("keeps mobile and reduced-motion protections", async () => {
+  const app = await readFile(new URL("app/game-app.tsx", root), "utf8");
   const css = await readFile(new URL("app/globals.css", root), "utf8");
+  assert.match(app, /`screen-\$\{screen\}`/);
+  assert.match(app, /`room-\$\{game\.room\.status\}`/);
+  assert.match(app, /lobby-start-action/);
+  assert.match(app, /window\.scrollTo\(0, 0\);/);
   assert.match(css, /\.lobby-settings \{[\s\S]*border: 2px solid var\(--ink\);[\s\S]*box-shadow: 7px 7px 0 var\(--ink\);/);
   assert.match(css, /\.lobby-settings h2 \{[\s\S]*font-size: clamp\(26px, 3vw, 36px\);/);
   assert.match(css, /env\(safe-area-inset-bottom\)/);
+  assert.match(css, /\.lobby-start-action \{[\s\S]*position: fixed;/);
+  assert.match(css, /\.standings \{ order: initial;/);
+  assert.match(css, /\.answer-form \{[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto;/);
+  assert.match(css, /input, select \{ font-size: 16px; \}/);
   assert.match(css, /@media \(max-width: 340px\)/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(css, /focus-visible/);

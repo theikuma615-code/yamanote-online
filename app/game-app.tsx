@@ -411,6 +411,10 @@ export default function GameApp() {
     return () => window.clearInterval(timer);
   }, [screen, matchingSince]);
 
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [screen, game?.room.status]);
+
   useEffect(() => () => {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     if (playerAnimationTimerRef.current) {
@@ -715,7 +719,13 @@ export default function GameApp() {
     `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 
   return (
-    <main className="app-shell">
+    <main
+      className={[
+        "app-shell",
+        `screen-${screen}`,
+        game?.room.status ? `room-${game.room.status}` : "",
+      ].filter(Boolean).join(" ")}
+    >
       <header className="topbar">
         <button
           className="brand"
@@ -1106,7 +1116,7 @@ export default function GameApp() {
               </div>
               {you?.isHost ? (
                 <button
-                  className="primary-action"
+                  className="primary-action lobby-start-action"
                   disabled={busy || game.players.length < 2}
                   onClick={() => void run(() => call({
                     action: "start",
@@ -1289,7 +1299,7 @@ export default function GameApp() {
                       <div className="nested-setting">
                         <span>ライフの数</span>
                         <div className="detail-choice-grid four">
-                          {[1, 2, 3, 5].map((value) => (
+                          {[2, 3, 5].map((value) => (
                             <button
                               key={value}
                               className={game.room.lifeCount === value ? "selected" : ""}
