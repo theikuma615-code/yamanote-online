@@ -168,6 +168,8 @@ export default function GameApp() {
   const [serverOffset, setServerOffset] = useState(0);
   const [toast, setToast] = useState("");
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [lobbySettingsOpen, setLobbySettingsOpen] = useState(false);
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   const [matchingSince, setMatchingSince] = useState(0);
   const [matchingElapsed, setMatchingElapsed] = useState(0);
   const [waitingCount, setWaitingCount] = useState<number | null>(null);
@@ -554,6 +556,8 @@ export default function GameApp() {
     setWaitingCount(null);
     setMatchingElapsed(0);
     setMatchingSince(0);
+    setLobbySettingsOpen(false);
+    setLeaveConfirmOpen(false);
   };
 
   const goHome = () => {
@@ -664,6 +668,15 @@ export default function GameApp() {
     }
   };
 
+  const requestLeaveRoom = () => {
+    if (!game) return;
+    if (game.room.status === "lobby") {
+      setLeaveConfirmOpen(true);
+      return;
+    }
+    void leaveRoom();
+  };
+
   const rematch = async () => {
     if (!game) return;
     await call({
@@ -731,7 +744,7 @@ export default function GameApp() {
           className="brand"
           onClick={() => {
             if (screen === "match") void cancelMatch();
-            else if (screen === "room" || screen === "settings") void leaveRoom();
+            else if (screen === "room" || screen === "settings") requestLeaveRoom();
             else goHome();
           }}
           aria-label="ホームへ戻る"
@@ -976,82 +989,102 @@ export default function GameApp() {
       {screen === "room" && game?.room.status === "lobby" && (
         <section className="lobby-screen">
           <div className="room-heading">
-            <div className="lobby-settings">
+            <div className={`lobby-settings ${lobbySettingsOpen ? "expanded" : ""} ${you?.isHost ? "" : "read-only"}`}>
               <span className="step-label">WAITING ROOM</span>
               <h2>ルーム設定</h2>
               <p>{game.players.length} / 8人が参加中</p>
-              <div className="lobby-setting-grid">
-                <fieldset>
-                  <legend>お題レベル</legend>
-                  <div className="compact-levels">
-                    {(["S", "A", "B", "C"] as const).map((level) => (
-                      <button
-                        key={level}
-                        className={`level-${level.toLowerCase()} ${game.room.difficulty === level ? "selected" : ""}`}
-                        disabled={busy || !you?.isHost}
-                        onClick={() => void run(() =>
-                          updateRoomSettings({ difficulty: level })
-                        )}
-                        aria-pressed={game.room.difficulty === level}
-                        aria-label={`お題レベル${level}、${difficultyLabels[level]}`}
-                      >
-                        {level}
-                      </button>
-                    ))}
-                  </div>
-                </fieldset>
-                <fieldset>
-                  <legend>
-                    {game.room.mode === "bomb" ? "爆弾タイマー" : "回答時間"}
-                  </legend>
-                  {game.room.mode === "bomb" ? (
-                    <div className="compact-times">
-                      {([
-                        [60, "1分"],
-                        [180, "3分"],
-                        [300, "5分"],
-                      ] as const).map(([value, label]) => (
-                        <button
-                          key={value}
-                          className={game.room.bombDuration === value ? "selected bomb" : ""}
-                          disabled={busy || !you?.isHost}
-                          onClick={() => void run(() =>
-                            updateRoomSettings({ bombDuration: value })
-                          )}
-                          aria-pressed={game.room.bombDuration === value}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="compact-times">
-                      {[10, 15, 20].map((value) => (
-                        <button
-                          key={value}
-                          className={game.room.timeLimit === value ? "selected" : ""}
-                          disabled={busy || !you?.isHost}
-                          onClick={() => void run(() =>
-                            updateRoomSettings({ timeLimit: value })
-                          )}
-                          aria-pressed={game.room.timeLimit === value}
-                        >
-                          {value}秒
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </fieldset>
+              <div className="lobby-settings-summary">
+                <span>現在の設定</span>
+                <b>
+                  レベル{game.room.difficulty}・
+                  {game.room.mode === "bomb"
+                    ? `爆弾${game.room.bombDuration / 60}分`
+                    : `回答時間${game.room.timeLimit}秒`}
+                </b>
+                <button
+                  disabled={busy || !you?.isHost}
+                  aria-expanded={lobbySettingsOpen}
+                  onClick={() => setLobbySettingsOpen((current) => !current)}
+                >
+                  {you?.isHost ? (lobbySettingsOpen ? "閉じる" : "変更") : "ホストのみ"}
+                </button>
               </div>
-              <div className="lobby-setting-footer">
-                <span>{you?.isHost ? "ホストが変更できます" : "ホストが設定を変更できます"}</span>
-                <button onClick={() => setScreen("settings")}>詳細設定 →</button>
+              <div className="lobby-settings-detail">
+                <div className="lobby-setting-grid">
+                  <fieldset>
+                    <legend>お題レベル</legend>
+                    <div className="compact-levels">
+                      {(["S", "A", "B", "C"] as const).map((level) => (
+                        <button
+                          key={level}
+                          className={`level-${level.toLowerCase()} ${game.room.difficulty === level ? "selected" : ""}`}
+                          disabled={busy || !you?.isHost}
+                          onClick={() => void run(() =>
+                            updateRoomSettings({ difficulty: level })
+                          )}
+                          aria-pressed={game.room.difficulty === level}
+                          aria-label={`お題レベル${level}、${difficultyLabels[level]}`}
+                        >
+                          {level}
+                        </button>
+                      ))}
+                    </div>
+                  </fieldset>
+                  <fieldset>
+                    <legend>
+                      {game.room.mode === "bomb" ? "爆弾タイマー" : "回答時間"}
+                    </legend>
+                    {game.room.mode === "bomb" ? (
+                      <div className="compact-times">
+                        {([
+                          [60, "1分"],
+                          [180, "3分"],
+                          [300, "5分"],
+                        ] as const).map(([value, label]) => (
+                          <button
+                            key={value}
+                            className={game.room.bombDuration === value ? "selected bomb" : ""}
+                            disabled={busy || !you?.isHost}
+                            onClick={() => void run(() =>
+                              updateRoomSettings({ bombDuration: value })
+                            )}
+                            aria-pressed={game.room.bombDuration === value}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="compact-times">
+                        {[10, 15, 20].map((value) => (
+                          <button
+                            key={value}
+                            className={game.room.timeLimit === value ? "selected" : ""}
+                            disabled={busy || !you?.isHost}
+                            onClick={() => void run(() =>
+                              updateRoomSettings({ timeLimit: value })
+                            )}
+                            aria-pressed={game.room.timeLimit === value}
+                          >
+                            {value}秒
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </fieldset>
+                </div>
+                <div className="lobby-setting-footer">
+                  <span>{you?.isHost ? "ホストが変更できます" : "ホストが設定を変更できます"}</span>
+                  <button onClick={() => setScreen("settings")}>詳細設定 →</button>
+                </div>
               </div>
             </div>
             <div className="room-code-card">
               <small>ROOM CODE</small>
               <b>{game.room.code}</b>
-              <button onClick={() => void copyRoomCode()}>コードをコピー ⧉</button>
+              <button onClick={() => void copyRoomCode()}>
+                {toast === "ルームコードをコピーしました" ? "コピーしました" : "コードをコピー ⧉"}
+              </button>
             </div>
           </div>
           <div className="invite-bar">
@@ -1059,15 +1092,19 @@ export default function GameApp() {
               <b>友達を招待</b>
               <span>URLを送るだけで、このルームへ参加できます。</span>
             </div>
-            <button className="invite-main" onClick={() => void shareInvite()}>
+            <button className="invite-main invite-desktop-action" onClick={() => void shareInvite()}>
               <span aria-hidden="true">↗</span> 共有する
             </button>
-            <button onClick={() => void copyInviteUrl()}>招待URLをコピー</button>
+            <button className="invite-desktop-action" onClick={() => void copyInviteUrl()}>招待URLをコピー</button>
+            <button className="invite-mobile-action" onClick={() => void shareInvite()}>
+              <span aria-hidden="true">↗</span> 友達を招待
+            </button>
           </div>
           <div className="lobby-content">
             <div className="players-card">
               <div className="section-title">
-                <span>PLAYERS</span><b>{game.players.length}<small> / 8人</small></b>
+                <span><i className="desktop-player-label">PLAYERS</i><i className="mobile-player-label">参加者</i></span>
+                <b>{game.players.length}<small> / 8人</small></b>
               </div>
               <div className="player-list" aria-live="polite">
                 {game.players.map((player, index) => (
@@ -1087,10 +1124,18 @@ export default function GameApp() {
                   <div className="empty-player"><span>＋</span> 友達の参加を待っています…</div>
                 )}
               </div>
+              {game.players.length < 8 && (
+                <p className="mobile-player-wait">友達の参加を待っています…</p>
+              )}
             </div>
             <aside className="rule-card">
               <span className="rule-number">
-                {game.room.mode === "bomb" ? "BOMB MODE" : "NORMAL MODE"} / LEVEL {game.room.difficulty}
+                <i className="desktop-mode-label">
+                  {game.room.mode === "bomb" ? "BOMB MODE" : "NORMAL MODE"} / LEVEL {game.room.difficulty}
+                </i>
+                <i className="mobile-mode-label">
+                  {game.room.mode === "bomb" ? "爆弾モード" : "通常モード"}・レベル{game.room.difficulty}
+                </i>
               </span>
               <h3>
                 {game.room.mode === "bomb"
@@ -1130,12 +1175,12 @@ export default function GameApp() {
                     playerId,
                   }))}
                 >
-                  <span>{game.players.length < 2 ? "あと1人でスタート" : "ゲームスタート"}</span><b>▶</b>
+                  <span>{game.players.length < 2 ? "あと1人でスタート" : "ゲームをスタート"}</span><b>▶</b>
                 </button>
               ) : (
                 <div className="host-wait"><i /> ホストの開始を待っています</div>
               )}
-              <button className="leave-link" onClick={() => void leaveRoom()}>ルームから退出</button>
+              <button className="leave-link" onClick={requestLeaveRoom}>退出</button>
               {error && <p className="form-error" role="alert">⚠ {error}</p>}
             </aside>
           </div>
@@ -1662,6 +1707,48 @@ export default function GameApp() {
             <li><b>ランダムマッチ</b><span>通常モード・1回答15秒固定です。</span></li>
           </ol>
           <p>回答候補をすべて言い切れるお題では、その時点で残っている全員が勝利します。</p>
+        </dialog>
+      )}
+
+      {leaveConfirmOpen && (
+        <dialog
+          open
+          className="modal confirm-modal"
+          aria-labelledby="leave-confirm-title"
+          aria-describedby="leave-confirm-description"
+          onCancel={(event) => {
+            event.preventDefault();
+            setLeaveConfirmOpen(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setLeaveConfirmOpen(false);
+            }
+          }}
+        >
+          <span className="step-label">LEAVE ROOM</span>
+          <h2 id="leave-confirm-title">ルームから退出しますか？</h2>
+          <p id="leave-confirm-description">待機中のルームから退出して、トップ画面へ戻ります。</p>
+          <div className="confirm-actions">
+            <button
+              className="secondary-action"
+              onClick={() => setLeaveConfirmOpen(false)}
+              autoFocus
+            >
+              キャンセル
+            </button>
+            <button
+              className="danger-action"
+              disabled={busy}
+              onClick={() => void run(async () => {
+                setLeaveConfirmOpen(false);
+                await leaveRoom();
+              })}
+            >
+              退出する
+            </button>
+          </div>
         </dialog>
       )}
 

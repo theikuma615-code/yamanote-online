@@ -20,6 +20,11 @@ test("includes the core onboarding and invitation experience", async () => {
   assert.match(app, /flowVersionRef/);
   assert.match(app, /招待URLをコピー/);
   assert.match(app, /navigator\.share/);
+  assert.match(app, /invite-mobile-action/);
+  assert.match(app, /lobbySettingsOpen/);
+  assert.match(app, /aria-expanded=\{lobbySettingsOpen\}/);
+  assert.match(app, /leaveConfirmOpen/);
+  assert.match(app, /ルームから退出しますか？/);
   assert.doesNotMatch(app, /line\.me\/R\/msg\/text/);
   assert.doesNotMatch(app, /import\("qrcode"\)/);
   assert.doesNotMatch(app, /LINEで送る/);
@@ -94,9 +99,11 @@ test("keeps mobile and reduced-motion protections", async () => {
   assert.match(css, /\.lobby-start-action \{[\s\S]*position: fixed;/);
   assert.match(css, /\.room-code-card \{[\s\S]*order: -1;[\s\S]*grid-template-columns: auto minmax\(0, 1fr\) auto;/);
   assert.match(css, /\.lobby-setting-grid \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
-  assert.match(css, /\.invite-bar > div \{ display: none; \}/);
-  assert.match(css, /\.player-list \{[\s\S]*max-height: 106px;[\s\S]*overflow-y: auto;/);
+  assert.match(css, /\.invite-bar > div,[\s\S]*\.invite-bar \.invite-desktop-action \{ display: none; \}/);
+  assert.match(css, /\.invite-bar \.invite-mobile-action \{[\s\S]*min-height: 54px;/);
+  assert.match(css, /\.player-list \{[\s\S]*max-height: 124px;[\s\S]*overflow-y: auto;/);
   assert.match(css, /\.rule-card > \.limit-display \{ display: none; \}/);
+  assert.match(css, /\.screen-room\.room-lobby \.lobby-screen \{[\s\S]*env\(safe-area-inset-bottom\)/);
   assert.match(css, /\.standings \{ order: initial;/);
   assert.match(css, /\.answer-form \{[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto;/);
   assert.match(css, /input, select \{ font-size: 16px; \}/);
