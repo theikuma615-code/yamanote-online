@@ -1454,40 +1454,112 @@ footer > span:last-child { color: var(--acid); }
     grid-template-columns: minmax(0, 1fr);
     align-items: stretch;
     justify-content: stretch;
-    gap: 16px;
-    margin-bottom: 22px;
+    gap: 8px;
+    margin-bottom: 8px;
   }
-  .lobby-settings { padding: 17px; box-shadow: 5px 5px 0 var(--ink); }
-  .lobby-settings h2 { margin: 7px 0 0; font-size: 25px; }
-  .room-heading p { margin-top: 8px; }
-  .lobby-setting-grid { margin-top: 14px; gap: 8px; }
-  .lobby-setting-grid fieldset { padding: 10px; }
-  .compact-levels button, .compact-times button { min-height: 44px; }
-  .lobby-setting-footer { align-items: center; margin-top: 7px; }
-  .lobby-setting-footer span { max-width: 58%; line-height: 1.4; }
-  .lobby-setting-footer button { min-height: 44px; }
-  .room-code-card, .code-chip { width: 100%; min-width: 0; }
-  .room-code-card { padding: 14px 17px; box-shadow: 5px 5px 0 var(--ink); }
-  .room-code-card > b { font-size: 33px; }
-  .invite-bar {
-    grid-template-columns: 1fr 1fr;
-    margin: 0 0 20px;
-    padding: 12px;
+  .lobby-settings {
+    padding: 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
     box-shadow: 4px 4px 0 var(--ink);
   }
-  .invite-bar > button { min-height: 48px; }
-  .invite-bar .invite-main { grid-column: 1 / -1; }
-  .lobby-content { gap: 15px; }
-  .players-card, .rule-card { padding: 17px; box-shadow: 5px 5px 0 var(--ink); }
-  .section-title { padding-bottom: 13px; }
-  .player-list { gap: 7px; margin-top: 13px; }
-  .lobby-player { min-height: 58px; }
-  .empty-player { min-height: 54px; }
-  .rule-card h3 { margin: 15px 0 9px; font-size: 28px; }
-  .rule-card p { font-size: 11px; line-height: 1.65; }
-  .rule-link { margin-top: 7px; }
-  .limit-display { min-height: 92px; margin: 14px 0; }
-  .limit-display b { font-size: 62px; }
+  .lobby-settings > .step-label { display: none; }
+  .lobby-settings h2 { margin: 0; font-size: 20px; }
+  .room-heading p { margin: 0; font-size: 10px; }
+  .lobby-setting-grid {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 8px;
+    gap: 6px;
+  }
+  .lobby-setting-grid fieldset { padding: 7px 6px 6px; }
+  .lobby-setting-grid legend { padding-inline: 4px; font-size: 8px; }
+  .compact-levels button, .compact-times button { min-height: 44px; }
+  .lobby-setting-footer {
+    grid-column: 1 / -1;
+    align-items: center;
+    margin-top: 3px;
+  }
+  .lobby-setting-footer span { max-width: 58%; font-size: 8px; line-height: 1.25; }
+  .lobby-setting-footer button { min-height: 44px; }
+  .room-code-card, .code-chip { width: 100%; min-width: 0; }
+  .room-code-card {
+    order: -1;
+    min-height: 58px;
+    padding: 6px 10px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 4px 4px 0 var(--ink);
+    text-align: left;
+  }
+  .room-code-card small { font-size: 8px; letter-spacing: 0.1em; }
+  .room-code-card > b {
+    justify-self: center;
+    margin: 0;
+    font-size: 25px;
+    letter-spacing: 0.12em;
+  }
+  .room-code-card button { min-height: 44px; font-size: 9px; }
+  .invite-bar {
+    grid-template-columns: 1fr 1fr;
+    margin: 0 0 8px;
+    padding: 6px;
+    gap: 6px;
+    box-shadow: 3px 3px 0 var(--ink);
+  }
+  .invite-bar > div { display: none; }
+  .invite-bar > button { min-height: 44px; }
+  .invite-bar .invite-main { grid-column: auto; }
+  .lobby-content { gap: 8px; }
+  .players-card, .rule-card { padding: 10px; box-shadow: 4px 4px 0 var(--ink); }
+  .section-title { padding-bottom: 6px; }
+  .section-title > span { font-size: 9px; }
+  .section-title > b { font-size: 18px; }
+  .player-list {
+    max-height: 106px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 7px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  .lobby-player {
+    min-height: 48px;
+    padding: 4px 6px;
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    gap: 5px;
+  }
+  .lobby-player .avatar { width: 30px; height: 30px; font-size: 15px; }
+  .lobby-player b {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+  }
+  .lobby-player b small { display: block; margin: 2px 0 0; font-size: 6px; }
+  .lobby-player em, .lobby-player i { padding: 4px; font-size: 6px; }
+  .empty-player { min-height: 48px; padding: 4px; font-size: 9px; text-align: center; }
+  .empty-player span { font-size: 17px; }
+  .rule-card {
+    min-height: 48px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px 10px;
+  }
+  .rule-card h3,
+  .rule-card > p,
+  .rule-card > .rule-link,
+  .rule-card > .limit-display { display: none; }
+  .rule-number { font-size: 8px; line-height: 1.4; }
+  .rule-card .leave-link { align-self: center; min-height: 44px; margin: 0; font-size: 9px; }
+  .rule-card .host-wait,
+  .rule-card .form-error { grid-column: 1 / -1; }
+  .rule-card .host-wait { min-height: 44px; }
   .lobby-start-action {
     position: fixed;
     right: 12px;
@@ -1503,11 +1575,10 @@ footer > span:last-child { color: var(--acid); }
     background: #e8e4dc;
     color: #666;
   }
-  .lobby-screen, .game-screen {
-    padding: 22px 12px calc(38px + env(safe-area-inset-bottom));
-  }
+  .lobby-screen { padding: 10px 12px calc(30px + env(safe-area-inset-bottom)); }
+  .game-screen { padding: 22px 12px calc(38px + env(safe-area-inset-bottom)); }
   .screen-room.room-lobby .lobby-screen {
-    padding-bottom: calc(92px + env(safe-area-inset-bottom));
+    padding-bottom: calc(82px + env(safe-area-inset-bottom));
   }
 
   .game-meta > span:not(.mode-pill) { display: none; }
@@ -1655,10 +1726,11 @@ footer > span:last-child { color: var(--acid); }
   .difficulty-pick > div { gap: 7px; }
   .difficulty-pick button small { font-size: 8px; }
   .detail-choice-grid.four { grid-template-columns: repeat(2, 1fr); }
-  .invite-bar { grid-template-columns: 1fr; }
+  .invite-bar { grid-template-columns: 1fr 1fr; }
   .invite-bar > div, .invite-bar .invite-main { grid-column: auto; }
-  .lobby-player { grid-template-columns: 36px 1fr auto; gap: 7px; padding: 8px; }
-  .avatar { width: 36px; height: 36px; }
+  .player-list { grid-template-columns: 1fr; }
+  .lobby-player { grid-template-columns: 30px minmax(0, 1fr) auto; gap: 5px; padding: 4px 6px; }
+  .lobby-player .avatar { width: 30px; height: 30px; }
   .turn-status { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 7px; }
   .avatar-big { width: 40px; height: 40px; }
   .countdown { min-width: 54px; }

@@ -92,6 +92,11 @@ test("keeps mobile and reduced-motion protections", async () => {
   assert.match(css, /\.lobby-settings h2 \{[\s\S]*font-size: clamp\(26px, 3vw, 36px\);/);
   assert.match(css, /env\(safe-area-inset-bottom\)/);
   assert.match(css, /\.lobby-start-action \{[\s\S]*position: fixed;/);
+  assert.match(css, /\.room-code-card \{[\s\S]*order: -1;[\s\S]*grid-template-columns: auto minmax\(0, 1fr\) auto;/);
+  assert.match(css, /\.lobby-setting-grid \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(css, /\.invite-bar > div \{ display: none; \}/);
+  assert.match(css, /\.player-list \{[\s\S]*max-height: 106px;[\s\S]*overflow-y: auto;/);
+  assert.match(css, /\.rule-card > \.limit-display \{ display: none; \}/);
   assert.match(css, /\.standings \{ order: initial;/);
   assert.match(css, /\.answer-form \{[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto;/);
   assert.match(css, /input, select \{ font-size: 16px; \}/);
